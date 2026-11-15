@@ -7,7 +7,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 // so a day whose track is missing simply has no music. Browsers keep audio silent until the first press or key, so nothing starts before that: beds and
 // one-shots asked for earlier wait quietly and join in once the context is running.
 
-type BedKind = "wind" | "rain" | "river" | "hum" | "shimmer" | "crickets";
+type BedKind = "wind" | "rain" | "river" | "hum" | "shimmer" | "crickets" | "breeze" | "sand" | "drone";
 
 type ShotName =
   | "thud"
@@ -699,7 +699,8 @@ class SoundEngine {
       case "snow":
         // Fresh snow: the squeak and crunch of crystals packing down, low and close.
         this.burst(at, "brown", "lowpass", 300 * pitch, 0.6, 0.01, 0.08, 0.15 * gain, out);
-        for (let i = 0; i < 14; i++) this.burst(at + 0.01 + (i / 14) * 0.16 + r() * 0.01, "pink", "bandpass", (700 + r() * 1300) * pitch, 3, 0.001, 0.012 + r() * 0.01, (0.05 + r() * 0.05) * gain, out);
+        for (let i = 0; i < 14; i++)
+          this.burst(at + 0.01 + (i / 14) * 0.16 + r() * 0.01, "pink", "bandpass", (700 + r() * 1300) * pitch, 3, 0.001, 0.012 + r() * 0.01, (0.05 + r() * 0.05) * gain, out);
         this.burst(at + 0.02, "white", "bandpass", 1500 * pitch, 1.2, 0.03, 0.12, 0.05 * gain, out);
         break;
       default:
@@ -893,6 +894,46 @@ class SoundEngine {
             lfo(rate, 0.02, pulse.gain);
             lfo(gate, 0.5, chirping.gain);
           }
+        } else if (kind === "breeze") {
+          // A light, steady air: no surges, only a slow drift in colour.
+          const air = loop("pink", "bandpass", 900, 0.6, 0.35);
+          loop("brown", "lowpass", 260, 0.5, 0.25);
+          filterNode = air.filter;
+          baseFrequency = 900;
+          lfo(0.05, 260, air.filter.frequency);
+          lfo(0.03, 0.06, air.part.gain);
+        } else if (kind === "sand") {
+          // Grains skittering over a crest: a fine high hiss that flutters in gusts.
+          const hiss = loop("white", "bandpass", 5200, 1.2, 0.22);
+          const grit = loop("pink", "highpass", 2400, 0.7, 0.12);
+          loop("brown", "lowpass", 220, 0.5, 0.18);
+          filterNode = hiss.filter;
+          baseFrequency = 5200;
+          lfo(7.5, 0.08, hiss.part.gain);
+          lfo(0.11, 0.1, hiss.part.gain);
+          lfo(0.08, 0.06, grit.part.gain);
+        } else if (kind === "drone") {
+          // Singing dunes: a low hum from sand sliding down a slip face, slightly out of tune with itself so it beats.
+          for (const [frequency, amount] of [
+            [92.5, 0.2],
+            [93.4, 0.16],
+            [185.3, 0.06],
+            [277.6, 0.025]
+          ]) {
+            const oscillator = context.createOscillator();
+            oscillator.type = "triangle";
+            oscillator.frequency.value = frequency;
+            const part = context.createGain();
+            part.gain.value = amount;
+            oscillator.connect(part);
+            part.connect(gain);
+            oscillator.start();
+            nodes.push(oscillator);
+            lfo(0.05 + Math.random() * 0.05, amount * 0.5, part.gain);
+          }
+          const body = loop("brown", "lowpass", 320, 0.6, 0.3);
+          filterNode = body.filter;
+          baseFrequency = 320;
         }
         gain.gain.setTargetAtTime(levelValue, context.currentTime, 0.8);
         if (filterNode && toneValue !== 1) filterNode.frequency.value = baseFrequency * toneValue;

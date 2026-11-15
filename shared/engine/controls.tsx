@@ -10,6 +10,8 @@ import type { CameraLimits } from "./types";
 // a grabbable only answers "did this ray hit you" and follows the point it is given.
 // The point the camera orbits. Anything that pushes the camera has to carry this with it, or the two drift apart.
 export const orbitPoint: { current: THREE.Vector3 | null } = { current: null };
+// The orbit controls themselves, for a day that needs to change how they answer the mouse; it must put back what it changes.
+export const orbitControls: { current: OrbitControls | null } = { current: null };
 // Set while something else steers the camera, such as walking. The rig then lets go of it: no orbit, no flying, no zoom.
 export const cameraTaken = { current: false };
 // The field of view the rig flies at when not sprinting, for whatever takes the camera to hand it back at.
@@ -100,8 +102,10 @@ export function CameraRig({ position, target, fov = 36, sprintFov = 0, limits, r
 
   useEffect(() => {
     orbitPoint.current = controls.target;
+    orbitControls.current = controls;
     return () => {
       orbitPoint.current = null;
+      orbitControls.current = null;
     };
   }, [controls]);
 

@@ -82,6 +82,11 @@ Creating a fun, interactive three.js experience every day of November. One word,
       <b>Day 14: <a href="14-tension">Tension</a></b><br>
       <a href="14-tension">Code</a> · <a href="https://adamwebsite.com/codevember/14-tension/">Live</a>
     </td>
+    <td align="center" valign="top">
+      <a href="15-mirage"><img src="videos/15-mirage.gif" alt="Mirage" width="260"></a><br>
+      <b>Day 15: <a href="15-mirage">Mirage</a></b><br>
+      <a href="15-mirage">Code</a> · <a href="https://adamwebsite.com/codevember/15-mirage/">Live</a>
+    </td>
   </tr>
 </table>
 
@@ -115,6 +120,7 @@ You need [Node.js](https://nodejs.org) 20.9 or newer, and a browser with WebGPU,
 | 12 | [Feather](12-feather) | A pair of bird's wings built from the bone out, every feather on the bone it grows from. |
 | 13 | [Labyrinth](13-labyrinth) | A labyrinth without end that never stops rebuilding itself. |
 | 14 | [Tension](14-tension) | An orb web beaded with dew, in four weathers. Pluck a thread and the spider comes running. |
+| 15 | [Mirage](15-mirage) | A little desert whose sand turns to water under your hand, and grows into an oasis. |
 
 ## Controls
 
@@ -180,7 +186,3 @@ The scanned rocks, plants and moss are all CC0, from [Poly Haven](https://polyha
 ## License
 
 [MIT](LICENSE)
-
----
-
-Developed with help from [Claude Opus 5.5](https://www.anthropic.com/claude) by Anthropic.

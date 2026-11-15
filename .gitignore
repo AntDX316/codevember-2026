@@ -168,3 +168,6 @@ public/THIRD_PARTY_NOTICES.txt
 *.[aA][iI][fF][fF]
 *.[wW][mM][aA]
 public/codevember/music/
+
+# macOS
+.DS_Store
