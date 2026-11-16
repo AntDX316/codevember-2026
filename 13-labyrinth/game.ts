@@ -61,6 +61,9 @@ function add(more: number, extra: Partial<State> = {}): 0 | 5 | 10 | 100 {
 }
 
 export const game = {
+  get coins() {
+    return current().coins;
+  },
   get on() {
     return current().on;
   },

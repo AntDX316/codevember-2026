@@ -32,8 +32,8 @@ Run it locally with `npm run dev` from the repo root, then open <http://localhos
 
 ### Sky, light and the mirage
 
-- Clouds drift across the sky and their shadows cross the sand; light shafts are marched through the air against the scene's depth, and dust motes catch the sun. The mirage itself is a wall round the patch, bent by a ray march: a shimmering lake with heat streaks, heat haze, ribbons, or the default Fata Morgana, the far dunes stretched up into towers.
+- Clouds drift across the sky and their shadows cross the sand; light shafts are marched through the air against the scene's depth, and dust motes catch the sun. The mirage itself is a wall round the patch, bent by a ray march into a Fata Morgana: the far dunes stretched up into towers along the horizon.
 - The camera flies as in Labyrinth, and two fingers on a trackpad turn the view. Depth of field focuses like an eye, reading how far off whatever is in the middle of the frame stands from the scene's own depth, so palms, camels and grass come sharp; its blur eases with distance, as through a lens.
-- Sound: seven ambiences to choose from and five voices for sand turning to water, a pop as each palm breaks the ground, footfalls and calls, all synthesised in Web Audio, over a music track.
+- Sound: still desert air with a light breeze, a trickle as sand turns to water, a pop as each palm breaks the ground, footfalls and calls, all synthesised in Web Audio, over a music track.
 
 Everyone whose work Codevember builds on is listed in [CREDITS.md](../CREDITS.md).

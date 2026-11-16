@@ -8,6 +8,8 @@ import { useDispose } from "../shared/engine/dispose";
 import { worldShifted } from "../shared/engine/extents";
 import { useQuality } from "../shared/engine/quality";
 import { sound } from "../shared/engine/sound";
+import { followPrompt } from "../shared/ui/Follow";
+import { shareResult } from "../shared/ui/Share";
 import { walking } from "../shared/engine/walk";
 import { game } from "./game";
 import { hedgesUp, liveHeights, SIZE } from "./hedge";
@@ -35,6 +37,9 @@ type Spot = { x: number; z: number; side: -1 | 0 | 1; on: boolean };
 const SPOTS: Spot[] = [{ x: 0.5, z: 0.5, side: -1, on: false }];
 for (const step of [0.75, 1, 1.25]) SPOTS.push({ x: step, z: 0.5, side: 0, on: false }, { x: 0.5, z: step, side: 1, on: false });
 for (const step of [0.125, 0.375, 0.625, 0.875]) SPOTS.push({ x: 1, z: step, side: 0, on: true }, { x: step, z: 1, side: 1, on: true });
+
+// Coins picked up since the page opened (the total is kept across visits; this is not).
+const found = { count: 0 };
 
 export default function Coins() {
   const camera = useThree((state) => state.camera);
@@ -156,6 +161,9 @@ export default function Coins() {
     if (passed === 5) sound.play("ping", { gain: 1.4 });
     if (passed === 10) sound.play("chime", { gain: 1.5 });
     if (passed === 100) sound.play("fanfare", { gain: 1.6 });
+    shareResult.set(`I've found ${game.coins} coins in Labyrinth`);
+    // Ten coins picked up here is someone properly playing: the follow card's moment.
+    if (++found.count === 10) followPrompt.earn();
   };
 
   return <primitive object={mesh} />;

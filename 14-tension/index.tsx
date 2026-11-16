@@ -8,6 +8,8 @@ import { focusBlur, focusDistance } from "../shared/engine/Post";
 import { useQuality } from "../shared/engine/quality";
 import { useSetting, useSettingAction } from "../shared/engine/settings";
 import { sound, useBed, useEvery, useMusic } from "../shared/engine/sound";
+import { followPrompt } from "../shared/ui/Follow";
+import { shareResult } from "../shared/ui/Share";
 import { useLook } from "../shared/engine/Stage";
 import type { DayDefinition } from "../shared/engine/types";
 import { Air } from "./air";
@@ -29,6 +31,9 @@ const LOOK = {
   bloomThreshold: 0.8,
   haze: 0
 };
+
+// Threads snapped since the page opened.
+const snapped = { count: 0 };
 
 function Scene() {
   useMusic("/codevember/music/analytical-crime-underscore.mp3", 0.32);
@@ -162,6 +167,11 @@ function Scene() {
     web.wind = windSetting * look.wind * (1.6 + gust) * 4;
     web.step(delta, tier === "low" ? 6 : 10);
     for (const snap of web.snapped) {
+      // A dozen threads snapped is the web well and truly tested: the follow card's moment.
+      if (++snapped.count === 12) {
+        shareResult.set("I tore a dewy spider web apart, thread by thread, in Tension");
+        followPrompt.earn();
+      }
       sound.play("snap", {
         gain: snap.kind === Kind.Spiral ? 0.4 : 0.7,
         pitch: snap.kind === Kind.Spiral ? 1.3 : 0.9,

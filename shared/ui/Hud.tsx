@@ -10,6 +10,10 @@ import type { SettingsStore } from "../engine/settings";
 import type { OverviewSection, QualityTier, Setting } from "../engine/types";
 import { resetPrompt, usePromptDone } from "../engine/prompt";
 import { GithubIcon, REPO } from "./github";
+import { FollowCard } from "./Follow";
+import { ShareButton } from "./Share";
+import { LINKEDIN_URL, LinkedInIcon, X_URL, XIcon } from "./social";
+import { track } from "../engine/track";
 import { sound, useSoundOn } from "../engine/sound";
 import { SETTLE, TextMotion, fade, inTurn, rise, riseBig } from "./motion";
 import { FrameGraph } from "./FrameGraph";
@@ -339,19 +343,16 @@ export function Hud({ day, hint, prompt, notes, overview, Overlay, settings, pho
           </div>
         ) : null}
         <div className="cv-bar-actions">
-        <a className="cv-pill cv-round" href={REPO} target="_blank" rel="noreferrer" aria-label="The code on GitHub">
+        <a className="cv-pill cv-round" href={REPO} target="_blank" rel="noreferrer" aria-label="The code on GitHub" onClick={() => track("bar-github")}>
           <GithubIcon />
         </a>
-        <a className="cv-pill cv-round" href="https://x.com/ajc_builds" target="_blank" rel="noreferrer" aria-label="Adam on X">
-          <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
-            <path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-          </svg>
+        <a className="cv-pill cv-round" href={X_URL} target="_blank" rel="noreferrer" aria-label="Adam on X" onClick={() => track("bar-x")}>
+          <XIcon />
         </a>
-        <a className="cv-pill cv-round" href="https://www.linkedin.com/in/adamchernick/" target="_blank" rel="noreferrer" aria-label="Adam on LinkedIn">
-          <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
-            <path fill="currentColor" d="M20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.36V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zM7.12 20.45H3.56V9h3.56v11.45z" />
-          </svg>
+        <a className="cv-pill cv-round" href={LINKEDIN_URL} target="_blank" rel="noreferrer" aria-label="Adam on LinkedIn" onClick={() => track("bar-linkedin")}>
+          <LinkedInIcon />
         </a>
+        <ShareButton day={day} />
         <button type="button" className="cv-pill" aria-pressed={soundOn} onClick={() => sound.toggle()}>
           <Swap text={soundOn ? "Sound on" : "Sound off"} />
         </button>
@@ -461,6 +462,8 @@ export function Hud({ day, hint, prompt, notes, overview, Overlay, settings, pho
           </motion.div>
         ) : null}
       </AnimatePresence>
+
+      <FollowCard dayNumber={day.day} />
 
       <motion.p className="cv-credit" variants={fade} initial="hidden" animate="show">
         Built with{" "}

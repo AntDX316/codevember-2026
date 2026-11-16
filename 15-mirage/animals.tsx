@@ -6,6 +6,8 @@ import * as THREE from "three/webgpu";
 import { dot, float, Fn, smoothstep, uv, instanceIndex, instancedArray, max, mix, normalWorld, positionWorld, vec2, vec3, vec4 } from "three/tsl";
 import { useDispose } from "../shared/engine/dispose";
 import { sound } from "../shared/engine/sound";
+import { followPrompt } from "../shared/ui/Follow";
+import { shareResult } from "../shared/ui/Share";
 import { type Desert, homeAt, PATCH } from "./desert";
 import { type Bone, type Joints, Kind } from "./creatures";
 import { world } from "./render";
@@ -28,6 +30,9 @@ const CAMELS = 8;
 const NECK = 10;
 const CAMEL_NECK = 6;
 const STRIDE = 0.17;
+// How close two camels may come, centre to centre: a little more than half of each one's length, so they never walk
+// into or through each other.
+const clearance = (a: { size: number }, b: { size: number }) => 1.2 * (a.size + b.size);
 const SKY_BIRDS = 30;
 const PROBES = 24 * 24 + FLAMINGOS + CAMELS;
 
@@ -407,6 +412,16 @@ export function Animals({ desert, life }: { desert: Desert; life: { current: Lif
       }
       h.nextFlock = now + rand(5, 11);
     }
+    // A spot by the water near `near` that no other camel is standing on or making for.
+    const freeSpot = (spots: THREE.Vector3[], near: THREE.Vector3, size: number, self: Camel | null) => {
+      const spot = new V();
+      for (let tries = 0; tries < 12; tries++) {
+        const base = tries < 4 ? near : (spots[Math.floor(Math.random() * spots.length)] ?? near);
+        spot.set(base.x + rand(-0.4, 0.4), 0, base.z + rand(-0.4, 0.4));
+        if (h.camels.every((o) => o === self || (o.goal.distanceTo(spot) > clearance(o, { size }) && Math.hypot(o.at.x - spot.x, o.at.z - spot.z) > clearance(o, { size })))) break;
+      }
+      return spot;
+    };
     if (oasis > 0.03 && h.water.length > 3 && now > h.nextHerd && h.camels.length < CAMELS) {
       const wanted = oasis > 0.5 ? CAMELS : 4;
       if (h.camels.length < wanted) {
@@ -423,7 +438,7 @@ export function Animals({ desert, life }: { desert: Desert; life: { current: Lif
             state: "walk",
             at: start,
             yaw: heading + Math.PI,
-            goal: drink.clone().add(new V(rand(-0.3, 0.3), 0, rand(-0.3, 0.3))),
+            goal: freeSpot(spots, drink, calf ? 0.62 * 0.21 : 0.21, null),
             until: 0,
             gait: rand(0, 6),
             size: (calf ? 0.62 : rand(0.92, 1.08)) * 0.21,
@@ -530,15 +545,49 @@ export function Animals({ desert, life }: { desert: Desert; life: { current: Lif
       kinds.flamingo.pose(flamingoCount++, joints, f.x, 0.12 * b.size, WHITE.clone().lerp(BLUSH, b.tint));
     }
 
-    // Camels.
+    // Camels. Any two closer than they should be are eased apart, a standing one giving way less than a walking one.
+    for (let i = 0; i < h.camels.length; i++)
+      for (let j = i + 1; j < h.camels.length; j++) {
+        const a = h.camels[i];
+        const b = h.camels[j];
+        const dx = b.at.x - a.at.x;
+        const dz = b.at.z - a.at.z;
+        const d = Math.hypot(dx, dz);
+        const gap = clearance(a, b) - d;
+        if (gap <= 0) continue;
+        const [nx, nz] = d > 1e-4 ? [dx / d, dz / d] : [Math.cos(i), Math.sin(i)];
+        const wa = a.state === "walk" ? 1 : 0.25;
+        const wb = b.state === "walk" ? 1 : 0.25;
+        const push = Math.min(gap, 0.6 * delta + gap * Math.min(1, delta * 4)) / (wa + wb);
+        a.at.x -= nx * push * wa;
+        a.at.z -= nz * push * wa;
+        b.at.x += nx * push * wb;
+        b.at.z += nz * push * wb;
+      }
     for (const c of h.camels) {
       const g = groundAt(c.at.x, c.at.z, c.probe);
       c.ground += (g.y - c.ground) * Math.min(1, delta * 5);
       let moving = 0;
       if (c.state === "walk") {
         const to = new V(c.goal.x - c.at.x, 0, c.goal.z - c.at.z);
-        if (to.length() > 0.12) {
-          c.yaw += angleTo(c.yaw, Math.atan2(to.x, to.z)) * Math.min(1, delta * 1.2);
+        // Someone already standing where it was making for: it stops beside them instead.
+        const taken = h.camels.some((o) => o !== c && o.state !== "walk" && Math.hypot(o.at.x - c.goal.x, o.at.z - c.goal.z) < clearance(o, c));
+        if (to.length() > (taken ? clearance(c, c) * 1.6 : 0.12)) {
+          // Round any camel in its way: turn aside from those close ahead, the closer the harder.
+          let want = Math.atan2(to.x, to.z);
+          for (const o of h.camels) {
+            if (o === c) continue;
+            const dx = o.at.x - c.at.x;
+            const dz = o.at.z - c.at.z;
+            const d = Math.hypot(dx, dz);
+            const room = clearance(o, c) * 2.2;
+            const ahead = (Math.sin(c.yaw) * dx + Math.cos(c.yaw) * dz) / Math.max(d, 1e-4);
+            if (d < room && ahead > 0.2) {
+              const side = Math.cos(c.yaw) * dx - Math.sin(c.yaw) * dz > 0 ? -1 : 1;
+              want += side * 1.1 * (1 - d / room) * ahead;
+            }
+          }
+          c.yaw += angleTo(c.yaw, want) * Math.min(1, delta * 1.6);
           // As fast as the strides carry it, so the planted feet never slide.
           const step = 4 * STRIDE * c.size * (c.calf ? 1.35 : 0.9) * delta;
           c.at.x += Math.sin(c.yaw) * step;
@@ -547,6 +596,9 @@ export function Animals({ desert, life }: { desert: Desert; life: { current: Lif
         } else {
           c.state = "drink";
           c.until = now + rand(7, 14);
+          // The camels reaching the water is the oasis done: the follow card's moment.
+          shareResult.set("I grew an oasis in the desert and the camels came to drink, in Mirage");
+          followPrompt.earn();
         }
       } else if (now > c.until) {
         if (c.state === "drink") {
@@ -555,7 +607,7 @@ export function Animals({ desert, life }: { desert: Desert; life: { current: Lif
         } else {
           const spots = h.shore.length ? h.shore : h.water;
           const pick = spots.length ? spots[Math.floor(Math.random() * spots.length)] : c.at;
-          c.goal.set(pick.x + rand(-0.4, 0.4), 0, pick.z + rand(-0.4, 0.4));
+          c.goal.copy(freeSpot(spots, pick, c.size, c));
           c.state = Math.random() < 0.6 ? "walk" : "idle";
           c.until = now + rand(5, 10);
         }

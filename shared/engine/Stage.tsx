@@ -24,7 +24,7 @@ declare module "@react-three/fiber" {
 
 extend(THREE as never);
 
-const LookContext = createContext<(patch: Partial<Look>) => void>(() => {});
+export const LookContext = createContext<(patch: Partial<Look>) => void>(() => {});
 
 // Lets a scene drive the shared stack from its own settings, e.g. a haze slider.
 export function useLook(patch: Partial<Look>) {
@@ -100,12 +100,20 @@ function startingView(camera: DayDefinition["camera"]) {
 }
 
 
-function SceneWarmup({ phase, onCompiling, onReady }: { phase: RefObject<RenderPhase>; onCompiling: () => void; onReady: () => void }) {
+// Before the scene is shown, while the loader still covers it, the frame rate is judged once: a scene too slow for its
+// tier on Auto steps down here, unseen, rather than a few seconds after it appears, where rebuilding its passes (and
+// often the scene) shows as a stall and a flash.
+const PROBE = 1200;
+// With room to spare: once shown, the page has a little more to draw, and a step down then is what this is here to avoid.
+const SLOW = 48;
+type Judge = { stepDown: (() => void) | null };
+
+function SceneWarmup({ phase, onCompiling, onReady, judge }: { phase: RefObject<RenderPhase>; onCompiling: () => void; onReady: () => void; judge: RefObject<Judge> }) {
   const gl = useThree((state) => state.gl) as unknown as THREE.WebGPURenderer;
   const size = useThree((state) => state.size);
   const scene = useThree((state) => state.scene);
   const camera = useThree((state) => state.camera);
-  const run = useRef({ frames: 0, smooth: 0, gpuDone: false, gpuDoneAt: 0, finished: false, warmAt: 0 });
+  const run = useRef({ frames: 0, smooth: 0, gpuDone: false, gpuDoneAt: 0, finished: false, warmAt: 0, probeAt: 0, probeFrames: 0, steps: 0 });
   const unhidden = useRef<THREE.Object3D[]>([]);
   const compiling = useRef({ pending: 0, lastNewAt: 0, release: () => {} });
 
@@ -186,12 +194,34 @@ function SceneWarmup({ phase, onCompiling, onReady }: { phase: RefObject<RenderP
     if (!overdue && (!state.gpuDone || shaders.pending > 0 || performance.now() - shaders.lastNewAt < 150)) return;
     state.smooth = delta < 1 / 12 ? state.smooth + 1 : 0;
     // A slow machine may never run smoothly. Don't keep it waiting for that.
-    if (overdue || state.smooth >= 4 || performance.now() - state.gpuDoneAt > 2500) {
-      state.finished = true;
-      shaders.release();
-      phase.current = "live";
-      onReady();
+    if (!state.probeAt && !(overdue || state.smooth >= 4 || performance.now() - state.gpuDoneAt > 2500)) return;
+    // Ready to show. On Auto, a moment's frames first, to see whether this tier keeps up.
+    const stepDown = judge.current.stepDown;
+    if (!overdue && stepDown && state.steps < 2) {
+      const now = performance.now();
+      if (!state.probeAt) {
+        state.probeAt = now;
+        state.probeFrames = 0;
+        return;
+      }
+      state.probeFrames += 1;
+      if (now - state.probeAt < PROBE) return;
+      const fps = (state.probeFrames * 1000) / (now - state.probeAt);
+      state.probeAt = 0;
+      if (fps < SLOW) {
+        // A tier down, and back to waiting for whatever that has to build.
+        state.steps += 1;
+        state.smooth = 0;
+        state.gpuDoneAt = now;
+        shaders.lastNewAt = now;
+        stepDown();
+        return;
+      }
     }
+    state.finished = true;
+    shaders.release();
+    phase.current = "live";
+    onReady();
   }, 2);
 
   return null;
@@ -216,6 +246,11 @@ export default function Stage({ day, onStep }: { day: CodevemberDay; onStep: (st
   const definition = loaded?.definition;
   const start = definition?.autoStart;
   const tier = choice === "auto" ? (start && TIER_RANK[start] < TIER_RANK[autoTier] ? start : autoTier) : choice;
+  // What the warm-up may do about a slow scene: step Auto down a tier, if there is one above the day's floor.
+  const floor = definition?.autoFloor ?? "low";
+  const judge = useRef<Judge>({ stepDown: null });
+  judge.current.stepDown =
+    choice === "auto" && isWebGPU && TIER_RANK[tier] > TIER_RANK[floor] ? () => setAutoTier(tier === "high" ? "medium" : "low") : null;
   const settings = useCreateSettings(definition?.settings);
 
   const [lookPatch, setLookPatch] = useState<Partial<Look>>({});
@@ -324,7 +359,7 @@ export default function Stage({ day, onStep }: { day: CodevemberDay; onStep: (st
                     <SceneBoundary key={loaded.day.day} onError={setError}>
                       <Suspense fallback={null}>
                         <definition.Scene />
-                        <SceneWarmup key={loaded.id} phase={phase} onCompiling={() => advance("shaders")} onReady={() => advance("done")} />
+                        <SceneWarmup key={loaded.id} phase={phase} onCompiling={() => advance("shaders")} onReady={() => advance("done")} judge={judge} />
                       </Suspense>
                     </SceneBoundary>
                   </>

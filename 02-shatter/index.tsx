@@ -51,6 +51,8 @@ import { Birds, createSky, type SkyPalette } from "../shared/engine/outdoors";
 import { useQuality } from "../shared/engine/quality";
 import { useSetting, useSettingAction, useSettingRef } from "../shared/engine/settings";
 import { sound, useBed, useEvery, useMusic } from "../shared/engine/sound";
+import { followPrompt } from "../shared/ui/Follow";
+import { shareResult } from "../shared/ui/Share";
 import { Haze, KeyLight, StudioEnvironment } from "../shared/engine/studio";
 import { useLook } from "../shared/engine/Stage";
 import type { DayDefinition } from "../shared/engine/types";
@@ -115,6 +117,9 @@ const rotate = (q: any, v: any) => {
   const t = cross(q.xyz, v).mul(2) as any;
   return v.add(t.mul(q.w)).add(cross(q.xyz, t));
 };
+
+// Pieces of sky fallen since the page opened.
+const fallen = { count: 0 };
 
 function Sky({ palette, broken }: { palette: SkyPalette; broken: { current: number } }) {
   const { gl, scene, camera } = useThree() as any;
@@ -346,6 +351,11 @@ function Sky({ palette, broken }: { palette: SkyPalette; broken: { current: numb
     item.vx = thrown.x;
     item.vy = thrown.y;
     item.vz = thrown.z;
+    // Fifty pieces of sky down is the payoff: the follow card's moment.
+    if (++fallen.count === 50) {
+      shareResult.set("I smashed the sky to pieces over a frozen lake in Shatter");
+      followPrompt.earn();
+    }
     // A big break is too many voices to stack, so while one rings out, the plates after it only crack.
     const size = Math.min(1, shard.reach / (DOME_RADIUS * 0.22));
     const now = clock.current;

@@ -56,7 +56,8 @@ const LIVE: Record<number, string> = {
   12: "A pair of bird's wings built from the bone out, every feather on the bone it grows from.",
   13: "A labyrinth without end that never stops rebuilding itself.",
   14: "An orb web beaded with dew, in four weathers. Pluck a thread and the spider comes running.",
-  15: "A little desert whose sand turns to water under your hand, and grows into an oasis."
+  15: "A little desert whose sand turns to water under your hand, and grows into an oasis.",
+  16: "A forest floor at night where spores you let go grow into a glowing, spreading bloom."
 };
 
 const CODEVEMBER_YEAR = 2026;

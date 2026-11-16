@@ -38,6 +38,7 @@ import {
 } from "three/tsl";
 import { Birds, createSky, SkyDome, type SkyPalette } from "../shared/engine/outdoors";
 import { sound, useBed, useEvery, useMusic } from "../shared/engine/sound";
+import { followPrompt } from "../shared/ui/Follow";
 import { orbitPoint } from "../shared/engine/controls";
 import { useGrabRigidBody } from "../shared/engine/physics";
 import { airTint, focusBlur } from "../shared/engine/Post";
@@ -147,6 +148,9 @@ const FIBER_LAYERS = {
 };
 
 // Shared colouring: the photograph of real moss, dark down among the stems and bright at the tips, with sun coming through from behind.
+// Stones that have struck hard since the page opened.
+const throws = { count: 0 };
+
 function mossColour(level: any, photo: any, sunDir: any, normal: any) {
   const colour = photo.mul(mix(float(0.2), float(1.05), smoothstep(0, 1, level))) as any;
   const toEye = normalize(cameraPosition.sub(positionWorld)) as any;
@@ -690,7 +694,11 @@ function Stone({ spec, materials, shells, sprigs, gravity, quality }: { spec: St
     // Quiet once it has gone over the edge and landed far below.
     const far = rigid.translation().y < -30 ? 0.22 : 1;
     sound.play("thud", { size: Math.min(1, built.radius), gain: Math.min(1, speed / 6) * far, pan: rigid.translation().x / 16 });
-    if (speed > 2.5) sound.play("crack", { gain: Math.min(0.5, speed / 18) * far });
+    if (speed > 2.5) {
+      sound.play("crack", { gain: Math.min(0.5, speed / 18) * far });
+      // A few stones thrown hard: the follow card's moment.
+      if (++throws.count === 4) followPrompt.earn();
+    }
   };
 
   return (

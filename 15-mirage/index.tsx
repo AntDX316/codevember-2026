@@ -14,7 +14,7 @@ import type { DayDefinition } from "../shared/engine/types";
 import { createDesert, homeAt, PATCH } from "./desert";
 import { Animals, type Life } from "./animals";
 import { Grass, Palms } from "./plants";
-import { aim, type Bend, BENDS, Dunes, Dust, ease, Shafts, Grains, Mirage, Sand, Sky, Spray, toneOf, Water, world } from "./render";
+import { aim, Dunes, Dust, ease, Shafts, Grains, Mirage, Sand, Sky, Spray, toneOf, Water, world } from "./render";
 import { LOOKS, type Style, STYLES } from "./styles";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- TSL's node types do not model every operator. */
@@ -131,7 +131,6 @@ function useLookingAt(gl: THREE.WebGPURenderer, camera: THREE.PerspectiveCamera)
 
 function Scene() {
   const style = useSetting<Style>("style");
-  const bend = useSetting<Bend>("mirage");
   const look = LOOKS[style];
   const { tier } = useQuality();
   const detail = DETAIL[tier as keyof typeof DETAIL] ?? DETAIL.medium;
@@ -263,7 +262,6 @@ function Scene() {
   });
 
   const river = useBed("river", 0);
-  const waterVoice = useSetting<WaterVoice>("water");
 
   // Each palm breaking the ground pops: read the palms' growth back now and then, and play for each that has just begun.
   const sprouts = useRef({ last: null as Float32Array | null, busy: false, at: 0 });
@@ -337,7 +335,7 @@ function Scene() {
     const speed = h.velocity.length() * 60;
     if (h.held && performance.now() - h.noise > 110) {
       h.noise = performance.now();
-      waterSound(waterVoice, speed);
+      waterSound(speed);
     }
     const w = wet.current;
     w.level = h.held ? Math.min(1, w.level + delta * 0.8) : w.level * Math.exp(-delta / 6);
@@ -364,13 +362,13 @@ function Scene() {
       });
   });
 
-  useAmbience(style, useSetting<Ambience>("ambience"));
+  useAmbience(style);
 
   return (
     <>
       <Sky />
       <Dunes desert={desert} fine={detail.fine} inner={PATCH / 2 - desert.CELL / 2} />
-      <Mirage bend={bend} />
+      <Mirage bend="towers" />
       <Sand desert={desert} />
       <Grains desert={desert} perColumn={detail.grains} />
       <Water desert={desert} />
@@ -391,65 +389,20 @@ function sprout(pan: number) {
   setTimeout(() => sound.play("rustle", { gain: 0.1, pan, pitch: 1.2 + Math.random() * 0.3 }), 70);
 }
 
-// Five sounds for sand turning to water under the hand, to choose between.
-type WaterVoice = "trickle" | "bubbles" | "sparkle" | "fizz" | "swirl";
-const WATER_VOICES: { value: WaterVoice; label: string }[] = [
-  { value: "trickle", label: "Trickle" },
-  { value: "bubbles", label: "Bubbles" },
-  { value: "sparkle", label: "Sparkle" },
-  { value: "fizz", label: "Fizz" },
-  { value: "swirl", label: "Swirl" }
-];
-// Major pentatonic steps, so sparkles never clash.
-const STEPS = [1, 1.125, 1.25, 1.5, 1.6875, 2, 2.25, 2.5];
-function waterSound(voice: WaterVoice, speed: number) {
+// Sand turning to water under the hand: a soft trickle, louder the faster the hand moves, with the odd plop.
+function waterSound(speed: number) {
   const loud = Math.min(0.35, speed * 0.4);
-  const r = Math.random();
-  if (voice === "trickle") {
-    sound.play(r < 0.6 ? "brush" : "drip", { gain: 0.15 + loud, pitch: 0.7 + Math.random() * 0.5 });
-    if (Math.random() < 0.25) sound.play("plop", { gain: 0.1 + Math.random() * 0.1, pitch: 0.9 + Math.random() * 0.5 });
-  } else if (voice === "bubbles") {
-    sound.play("plop", { gain: 0.12 + loud * 0.6, pitch: 0.8 + Math.random() * 1.2 + speed * 2 });
-    if (r < 0.5) setTimeout(() => sound.play("plop", { gain: 0.08, pitch: 1.4 + Math.random() }), 50);
-  } else if (voice === "sparkle") {
-    if (r < 0.6) sound.play("ping", { gain: 0.06 + loud * 0.3, pitch: STEPS[Math.floor(Math.random() * STEPS.length)] });
-    sound.play("drip", { gain: 0.08 + loud * 0.4, pitch: 1 + Math.random() * 0.5 });
-  } else if (voice === "fizz") {
-    sound.play("sizzle", { gain: 0.08 + loud * 0.5, pitch: 0.8 + Math.random() * 0.6 });
-    if (r < 0.3) sound.play("plop", { gain: 0.06, pitch: 1.5 + Math.random() * 0.6 });
-  } else {
-    if (r < 0.35) sound.play("whoosh", { gain: 0.06 + loud * 0.4, pitch: 0.6 + Math.random() * 0.3 });
-    sound.play("drip", { gain: 0.07 + loud * 0.3, pitch: 0.6 + Math.random() * 0.4 });
-  }
+  sound.play(Math.random() < 0.6 ? "brush" : "drip", { gain: 0.15 + loud, pitch: 0.7 + Math.random() * 0.5 });
+  if (Math.random() < 0.25) sound.play("plop", { gain: 0.1 + Math.random() * 0.1, pitch: 0.9 + Math.random() * 0.5 });
 }
 
-// Seven ambiences to choose between; each a bed or two and now and then a call. Night calls only under the moon, by-day
-// birds only by day.
-type Ambience = "still" | "dunes" | "sand" | "oasis" | "night" | "haze" | "wind";
-const AMBIENCES: { value: Ambience; label: string }[] = [
-  { value: "still", label: "Still air" },
-  { value: "dunes", label: "Singing dunes" },
-  { value: "sand", label: "Shifting sand" },
-  { value: "oasis", label: "Oasis birds" },
-  { value: "night", label: "Desert night" },
-  { value: "haze", label: "Warm haze" },
-  { value: "wind", label: "Open wind" }
-];
-
-function useAmbience(style: Style, ambience: Ambience) {
+// Still desert air: a light breeze, and now and then a far crow by day or an owl under the moon.
+function useAmbience(style: Style) {
   const night = style === "moonlit";
-  useBed("breeze", { still: 0.16, dunes: 0.08, sand: 0.1, oasis: 0.12, night: 0.07, haze: 0.05, wind: 0 }[ambience]);
-  useBed("drone", ambience === "dunes" ? 0.14 : 0);
-  useBed("sand", ambience === "sand" ? 0.12 : 0);
-  useBed("river", ambience === "oasis" ? 0.03 : 0);
-  useBed("crickets", ambience === "night" || (ambience === "oasis" && night) ? 0.12 : 0);
-  useBed("shimmer", ambience === "haze" ? 0.06 : 0);
-  useBed("hum", ambience === "haze" ? 0.05 : 0);
-  useBed("wind", ambience === "wind" ? 0.2 : 0);
+  useBed("breeze", 0.16);
   const pan = () => Math.random() * 1.6 - 0.8;
-  useEvery(1.5, 5, () => sound.play("chirp", { gain: 0.05 + Math.random() * 0.04, pan: pan(), pitch: 0.8 + Math.random() * 0.6 }), ambience === "oasis" && !night);
-  useEvery(8, 20, () => sound.play("caw", { gain: 0.05, pan: pan(), pitch: 0.7 + Math.random() * 0.2 }), (ambience === "still" || ambience === "wind") && !night);
-  useEvery(8, 20, () => sound.play("hoot", { gain: 0.08, pan: pan(), pitch: 0.9 + Math.random() * 0.2 }), ambience === "night" || night);
+  useEvery(8, 20, () => sound.play("caw", { gain: 0.05, pan: pan(), pitch: 0.7 + Math.random() * 0.2 }), !night);
+  useEvery(8, 20, () => sound.play("hoot", { gain: 0.08, pan: pan(), pitch: 0.9 + Math.random() * 0.2 }), night);
 }
 
 const mirage: DayDefinition = {
@@ -482,12 +435,9 @@ const mirage: DayDefinition = {
       value: "sahara",
       options: STYLES
     },
-    mirage: { type: "choice", label: "Mirage", value: "towers", options: BENDS },
-    ambience: { type: "choice", label: "Ambience", value: "still", options: AMBIENCES },
-    water: { type: "choice", label: "Water sound", value: "trickle", options: WATER_VOICES },
     reset: { type: "action", label: "Start again" }
   },
-  phonePills: ["style", "mirage", "reset"],
+  phonePills: ["style", "reset"],
   overview: [
     {
       title: "Sand and water",
@@ -514,9 +464,9 @@ const mirage: DayDefinition = {
     {
       title: "Sky, light and the mirage",
       points: [
-        "Clouds drift across the sky and their shadows cross the sand; light shafts are marched through the air against the scene's depth, and dust motes catch the sun. The mirage itself is a wall round the patch, bent by a ray march: a shimmering lake with heat streaks, heat haze, ribbons, or the default Fata Morgana, the far dunes stretched up into towers.",
+        "Clouds drift across the sky and their shadows cross the sand; light shafts are marched through the air against the scene's depth, and dust motes catch the sun. The mirage itself is a wall round the patch, bent by a ray march into a Fata Morgana: the far dunes stretched up into towers along the horizon.",
         "The camera flies as in Labyrinth, and two fingers on a trackpad turn the view. Depth of field focuses like an eye, reading how far off whatever is in the middle of the frame stands from the scene's own depth, so palms, camels and grass come sharp; its blur eases with distance, as through a lens.",
-        "Sound: seven ambiences to choose from and five voices for sand turning to water, a pop as each palm breaks the ground, footfalls and calls, all synthesised in Web Audio, over a music track."
+        "Sound: still desert air with a light breeze, a trickle as sand turns to water, a pop as each palm breaks the ground, footfalls and calls, all synthesised in Web Audio, over a music track."
       ]
     }
   ],

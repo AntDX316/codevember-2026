@@ -42,6 +42,7 @@ import { Birds, createSky, SkyDome, type SkyPalette } from "../shared/engine/out
 import { useQuality } from "../shared/engine/quality";
 import { useSetting, useSettingAction, useSettingRef, useSettingsStore } from "../shared/engine/settings";
 import { sound, useBed, useEvery, useMusic } from "../shared/engine/sound";
+import { followPrompt } from "../shared/ui/Follow";
 import { Haze, KeyLight, StudioEnvironment, StudioFloor } from "../shared/engine/studio";
 import { useLook } from "../shared/engine/Stage";
 import type { DayDefinition, Look } from "../shared/engine/types";
@@ -99,6 +100,9 @@ const FLOCK_CENTRE: [number, number, number] = [0, 5.4, -1];
 const SHEET_W = SHEET_WIDTH / 2;
 
 // Feet at y = 0, nose along +x. aRig is (0 body, 1 head, 2 leg) and a phase.
+// Folds made by hand since the page opened.
+const folds = { count: 0 };
+
 function buildSheep() {
   const position: number[] = [];
   const normal: number[] = [];
@@ -553,6 +557,8 @@ function Sheet({ sheepCount, hour }: { sheepCount: number; hour: Hour }) {
         state.creased = 0;
         state.foldedAt = performance.now();
         sound.play("fold", { gain: 0.55, pan: point.x / 8 });
+        // Three folds made by hand: the follow card's moment.
+        if (++folds.count === 3) followPrompt.earn();
       }
     },
     drag(point) {

@@ -41,7 +41,7 @@ export const holdQuality = (ms: number) => {
 
 // Holds the frame rate on Auto by stepping the tier down, which recompiles the post stack and so only ever goes one
 // way. It restarts the temporal passes, which shows, so the rate is judged over two seconds at a time and has to be low
-// twice running before anything changes. The resolution is left alone: lowered, it shows on every day as a blur.
+// three times running before anything changes; the first judgement is made behind the loader (Stage's SceneWarmup). The resolution is left alone: lowered, it shows on every day as a blur.
 export function AdaptiveQuality({
   choice,
   tier,
@@ -87,8 +87,10 @@ export function AdaptiveQuality({
       meter.settle -= 1;
       return;
     }
-    meter.low = choice === "auto" && fps < 42 ? meter.low + 1 : 0;
-    if (meter.low < 2) return;
+    // The tier was judged before the scene was shown, so this is only for a scene that turns out far too slow: stepping
+    // down now rebuilds the passes in view, which shows as a stall.
+    meter.low = choice === "auto" && fps < 36 ? meter.low + 1 : 0;
+    if (meter.low < 3) return;
     meter.low = 0;
 
     const rung = LADDER.indexOf(tier);

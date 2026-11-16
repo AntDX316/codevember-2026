@@ -36,7 +36,13 @@ From [Poly Haven](https://polyhaven.com):
 | [Shrub Sorrel 01](https://polyhaven.com/a/shrub_sorrel_01) | Rico Cilliers |
 | [Shrub 03](https://polyhaven.com/a/shrub_03) | Rico Cilliers |
 | [Rock Moss Set 01](https://polyhaven.com/a/rock_moss_set_01) | Kless Gyzen |
-| [Bark Brown 02](https://polyhaven.com/a/bark_brown_02), on the twigs in Tension | Rob Tuytel |
+| [Bark Brown 02](https://polyhaven.com/a/bark_brown_02), on the twigs in Tension and the trees in Spore | Rob Tuytel |
+| [Dry Decay Leaves](https://polyhaven.com/a/dry_decay_leaves), the forest floor in Spore | Amal Kumar |
+| [Forest Leaves 02](https://polyhaven.com/a/forest_leaves_02) | Rob Tuytel |
+| [Jolcham Oak Bark 01](https://polyhaven.com/a/jolcham_oak_bark_01) | Charlotte Baglioni |
+| [Dead Tree Trunk](https://polyhaven.com/a/dead_tree_trunk) | Rob Tuytel |
+| [Dead Tree Trunk 02](https://polyhaven.com/a/dead_tree_trunk_02) | Jenelle van Heerden, Rico Cilliers |
+| [Dry Branches Medium 01](https://polyhaven.com/a/dry_branches_medium_01) | Rico Cilliers |
 
 From [ambientCG](https://ambientcg.com): [Moss 003](https://ambientcg.com/view?id=Moss003).
 
