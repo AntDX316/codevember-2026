@@ -94,6 +94,11 @@ Creating a fun, interactive three.js experience every day of November. One word,
       <b>Day 16: <a href="16-spore">Spore</a></b><br>
       <a href="16-spore">Code</a> · <a href="https://adamwebsite.com/codevember/16-spore/">Live</a>
     </td>
+    <td align="center" valign="top">
+      <a href="17-kelp"><img src="videos/17-kelp.gif" alt="Kelp" width="260"></a><br>
+      <b>Day 17: <a href="17-kelp">Kelp</a></b><br>
+      <a href="17-kelp">Code</a> · <a href="https://adamwebsite.com/codevember/17-kelp/">Live</a>
+    </td>
   </tr>
 </table>
 
@@ -129,6 +134,7 @@ You need [Node.js](https://nodejs.org) 20.9 or newer, and a browser with WebGPU,
 | 14 | [Tension](14-tension) | An orb web beaded with dew, in four weathers. Pluck a thread and the spider comes running. |
 | 15 | [Mirage](15-mirage) | A little desert whose sand turns to water under your hand, and grows into an oasis. |
 | 16 | [Spore](16-spore) | A forest floor at night where spores you let go grow into a glowing, spreading bloom. |
+| 17 | [Kelp](17-kelp) | A kelp forest under a moving surface, with sardines that come by to look at you. Stir the water, pull the kelp about, and move the sun. |
 
 ## Controls
 

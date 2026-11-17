@@ -36,6 +36,7 @@ import { mulberry32 } from "../shared/engine/random";
 import { walkAmount } from "../shared/engine/walk";
 import { type Air, bumped, fading, HEIGHT, leafGreen, made, placement, shape, swellAt, throughMist } from "./hedge-look";
 import { fractal2, noise3 } from "./hedge-noise";
+import { LEAF } from "./meshy-leaf";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- TSL's node types do not model every operator. */
 
@@ -835,3 +836,74 @@ export function stoneMaterial(air: Air, reach: number) {
   return material;
 }
 
+
+// Meshy leaves, 24 triangles each, sprinkled over a hedge among its vines: each one of the six variations, its own
+// size, standing a little out from the surface at its own angle and turned its own way. Each carries its place on the
+// leaf for the veins, and its middle for the material to shrink it away toward when the hedge is far.
+export function meshyLeafGeometry(x: number, z: number, ends: boolean, seed: number) {
+  const random = mulberry32(seed);
+  const ax = x / 2;
+  const az = z / 2;
+  const faces = ends ? 4 : 2;
+  const position: number[] = [];
+  const tint: number[] = [];
+  const middle: number[] = [];
+  const place: number[] = [];
+  for (let side = 0; side < faces; side++) {
+    const span = (side < 2 ? ax : az) - 0.06;
+    const count = ends ? 6 : 24;
+    for (let n = 0; n < count; n++) {
+      const spot = surfaceSpot(ax, az, side, (random() * 2 - 1) * span, 0.15 + random() * (climbOf(ax, az, side) - 0.2));
+      const leaf = LEAF.variants[Math.floor(random() * LEAF.variants.length)];
+      const size = 0.07 + random() ** 2 * 0.09;
+      // Out across the surface, leaning upward, lifted off it by its own angle.
+      const along = across(spot.normal, spot.up, 0.7, random);
+      const lift = 0.25 + random() * 0.6;
+      const dir = along.clone().multiplyScalar(Math.cos(lift)).addScaledVector(spot.normal, Math.sin(lift));
+      const sideways = v3().crossVectors(spot.normal, along).normalize();
+      const face = v3().crossVectors(dir, sideways).normalize();
+      if (face.dot(spot.normal) < 0) face.negate();
+      const root = spot.at.clone().addScaledVector(spot.normal, 0.012);
+      const corner = leaf.p.map(([t, y, w]) => root.clone().addScaledVector(dir, t * size).addScaledVector(face, y * size).addScaledVector(sideways, w * size));
+      const shade = 0.85 + random() * 0.3;
+      const centre = corner[0].clone().lerp(corner[corner.length - 1], 0.45);
+      const seedOf = random();
+      for (const tri of LEAF.tris)
+        for (const k of tri) {
+          position.push(corner[k].x, corner[k].y, corner[k].z);
+          tint.push(leaf.c[k][0] * shade, leaf.c[k][1] * shade, leaf.c[k][2] * shade);
+          middle.push(centre.x, centre.y, centre.z, seedOf);
+          place.push(LEAF.uv[k][0], LEAF.uv[k][1]);
+        }
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(position, 3));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(tint, 3));
+  geometry.setAttribute("aStone", new THREE.Float32BufferAttribute(middle, 4));
+  geometry.setAttribute("aLeaf", new THREE.Float32BufferAttribute(place, 2));
+  geometry.setAttribute("aGroup", new THREE.Float32BufferAttribute(new Float32Array((position.length / 3) * 2).map((_, i) => (i % 2 ? 1 : 0)), 2));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+// The Meshy leaves' look: their own baked colours with the veins drawn on (a pale midrib, side veins running out and
+// forward from it, the edges a little darker), waxy, lit on both faces, shrunk away toward their middles beyond reach.
+export function meshyLeafMaterial(air: Air, reach: number) {
+  const material = made(new THREE.MeshStandardNodeMaterial({ roughness: 0.55, metalness: 0, side: THREE.DoubleSide }));
+  const { world } = placement();
+  const leaf = attribute("aStone", "vec4") as any;
+  const near = smoothstep(reach, reach * 0.75, length(world(leaf.xyz).sub(cameraPosition))) as any;
+  shape(material, positionGeometry.sub(leaf.xyz).mul(near).add(leaf.xyz));
+  const on = attribute("aLeaf", "vec2") as any;
+  const w = abs(on.y) as any;
+  const rib = smoothstep(0.07, 0.0, w).mul(smoothstep(1, 0.85, on.x)) as any;
+  const veins = smoothstep(0.82, 0.97, sin(on.x.sub(w.mul(0.55)).mul(26)).mul(0.5).add(0.5)).mul(smoothstep(0.05, 0.15, w)).mul(smoothstep(0.95, 0.6, w)) as any;
+  const edge = smoothstep(0.75, 1, w).mul(0.2) as any;
+  // Darker and a little less bright a green than the scan, to sit in among the hedge's own leaves.
+  const base = (attribute("color", "vec3") as any).mul(vec3(0.42, 0.5, 0.4)) as any;
+  const tone = base.mul(float(1).add(rib.mul(0.45)).add(veins.mul(0.25)).sub(edge)) as any;
+  material.colorNode = fading(air, tone);
+  material.outputNode = vec4(throughMist(air, (output as any).rgb), 1) as any;
+  return material;
+}

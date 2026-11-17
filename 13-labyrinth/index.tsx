@@ -1,6 +1,6 @@
 "use client";
 
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 import { useSetting, useSettingsStore } from "../shared/engine/settings";
 import { sound, useMusic } from "../shared/engine/sound";
@@ -14,9 +14,14 @@ import { STYLES, type Style, useStyle } from "./styles";
 import { Play } from "./play";
 import { hedgeSolids, PERIOD } from "./walk";
 import { STUDIES, type Study } from "./warp";
+import { goTo } from "./view";
+import type * as THREE from "three/webgpu";
 
 // The sound of the world changing shape.
 const SHIFT = "/assets/13-labyrinth/world-change.mp3";
+// The bent worlds the maze moves between on its own, and how often.
+const BENT: Study[] = ["ring", "fold", "twist"];
+const BEND_EVERY = 13000;
 
 function Scene() {
   useMusic("/codevember/music/the-ultimate-betrayal.mp3", 0.32);
@@ -25,6 +30,12 @@ function Scene() {
   // As soon as the hedges have all risen, the flat maze folds up into walls all round, unless another world has
   // been chosen already.
   const store = useSettingsStore();
+  // For testing in development: put the eye somewhere from the console (in Fly).
+  const camera = useThree((state) => state.camera) as THREE.PerspectiveCamera;
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    (globalThis as Record<string, unknown>).__view = (position: [number, number, number], target: [number, number, number]) => goTo(camera, { position, target });
+  }, [camera]);
   const folded = useRef(false);
   // A sweep of sound with every change of world, and once at the start a second before the maze folds up.
   useEffect(() => sound.preload(SHIFT), []);
@@ -47,6 +58,21 @@ function Scene() {
       store.set("study", "fold");
     }, 1000);
   });
+  // Then every thirteen seconds it bends into another of its shapes, ring, fold or twist, at random and never back to flat.
+  // Any change, chosen or not, starts the thirteen seconds again, so a world picked by hand is held for a while too.
+  const bentAt = useRef(0);
+  useEffect(() => {
+    bentAt.current = performance.now();
+  }, [study]);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (hedgesUp.at === Infinity || performance.now() - bentAt.current < BEND_EVERY) return;
+      const now = store.get("study");
+      const next = BENT.filter((s) => s !== now);
+      store.set("study", next[Math.floor(Math.random() * next.length)]);
+    }, 500);
+    return () => window.clearInterval(timer);
+  }, [store]);
   const style = useSetting<Style>("style");
   useAmbience(style);
   // Game mode: coins all about the maze to collect, and the count and its milestones over the scene.
@@ -90,17 +116,18 @@ const labyrinth: DayDefinition = {
   // Black: the overlay pass clears to the background and is added over the frame, so any colour here would veil it.
   look: { background: "#000000", gi: 1, ao: 1, exposure: 1, bloom: 0.2, bloomThreshold: 0.85, vignette: 0.5, grain: 0.015 },
   settings: {
-    walk: { type: "toggle", label: "Walk", value: false, sides: ["Fly", "Walk"] },
+    // A visit starts on foot, playing, standing on top of a hedge.
+    walk: { type: "toggle", label: "Walk", value: true, sides: ["Fly", "Walk"] },
     // The world bent around the eye: up into a ring overhead, folded up into walls all round, or twisted over like a
     // ribbon.
     study: { type: "choice", label: "World", value: "flat", options: STUDIES },
     // The same maze drawn in another manner: nothing in it moves any differently.
     style: { type: "choice", label: "Style", value: "natural", options: STYLES },
-    game: { type: "toggle", label: "Game mode", value: false }
+    game: { type: "toggle", label: "Game mode", value: true }
   },
   phonePills: ["walk", "study", "style", "game"],
   Overlay: Play,
-  hint: "Drag to look around, WASD to fly. Walk takes you down into the maze, Space to jump over the hedges; on a phone, hold still to walk.",
+  hint: "You start on top of a hedge: drag to look around, WASD to walk and collect the coins, Space to jump; on a phone, hold still to walk. Fly to see it from above.",
   notes: "A hedge maze without end that never stops rebuilding itself.",
   overview: [
     {
@@ -136,8 +163,9 @@ const labyrinth: DayDefinition = {
     {
       title: "Walking, flying and the game",
       points: [
-        "Fly over it, or walk down into it: walking collides with the hedges as they stand that frame, with a jump over them and a damped rise back out. Sprinting widens the view and streaks the edges of the frame, and the camera always hovers a little, flying or walking.",
+        "Every thirteen seconds the world bends into another of its shapes, ring, fold or twist, chosen at random and never flat again. A visit starts on foot in game mode, standing on top of a hedge: the eye starts over a hedge's corner post, and the hedge growing up out of the ground at the start lifts the walker with it. Fly over it, or walk down into it: walking collides with the hedges as they stand that frame, with a jump over them and a damped rise back out. Sprinting widens the view and streaks the edges of the frame, and the camera always hovers a little, flying or walking.",
         "Game mode lays coins down every path and along every hedge top, a little over half a metre apart, and the rabbits run from you and can be caught for more. The count is kept in the browser; every tenth and hundredth coin brings up a card from the foot of the screen.",
+        "The rabbits and the leaves sprinkled among the vines are Meshy models cut right down. The rabbit, 30,524 triangles scanned with a texture, had its texture baked into its corners, its seams welded and was simplified to 300 triangles: 4 kB, no texture. The leaf, 30,829 triangles, became 24: its outline taken station by station from stem to tip, its width and the height of its midrib and edges from the scan's own surface, its colours from its texture, with a pale midrib, side veins and darker edges drawn on; then made into six variations (longer or rounder, folded, curled, leaning, fresh to yellowing) scattered at random sizes and angles over the hedges near you.",
         "Every sound is synthesised in Web Audio: an evening of wind, crickets and birdsong with gravel underfoot, or a hum, shimmer and relay clicks over the ringing grid in Tron, and a coin's ding that climbs the scale while they keep coming."
       ]
     }

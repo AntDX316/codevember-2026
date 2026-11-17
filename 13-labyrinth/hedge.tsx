@@ -28,7 +28,9 @@ import { farReach, stepStudies, type Study, trackViewer, warp } from "./warp";
 
 // A hedge maze at the end of a summer evening, which never stops rewriting itself. Walls sink into the earth and
 // others grow back out of it, a loop at a time, so it is always a true maze with one way through.
-export const VIEW: StudyView = { position: [-12.5, 4.2, 5], target: [-14.85, 3.6, -9.5], fov: 54 };
+// Straight over a hedge's corner post (posts stand every CELL across, where walls meet), so the walk the visit starts in
+// lands on top of the hedge, and the hedge growing up out of the ground lifts the walker with it.
+export const VIEW: StudyView = { position: [-13.5, 4.2, 5.4], target: [-15.85, 3.6, -9.1], fov: 54 };
 
 // Cells across the maze, which repeats beyond the mist, and how many cells out from the camera are drawn on each tier.
 // Walls nearer than NEAR get the finely made hedge.

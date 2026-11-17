@@ -3,7 +3,7 @@
 import { useEffect, useMemo } from "react";
 import * as THREE from "three/webgpu";
 import type { QualityTier } from "../shared/engine/types";
-import { cardMaterial, growthGeometry, leafGeometry, stoneGeometry, stoneMaterial, vineGeometry } from "./growth";
+import { cardMaterial, growthGeometry, leafGeometry, meshyLeafGeometry, meshyLeafMaterial, stoneGeometry, stoneMaterial, vineGeometry } from "./growth";
 import { type Air, CELL, tallness, THICK } from "./hedge-look";
 import { techGeometry, techMaterial } from "./tech";
 import { aim, inSight, sight } from "./view";
@@ -75,7 +75,7 @@ function dressed(geometry: THREE.BufferGeometry, material: THREE.Material, on: S
 export function useDressing(air: Air, tier: QualityTier) {
   // Made once, not again with each tier, so that a change of tier builds no new shaders.
   const materials = useMemo(
-    () => ({ leaves: cardMaterial(air, { fly: 6, walk: CLOSE }), growth: cardMaterial(air, { fly: MID, walk: MID }), stone: stoneMaterial(air, MID), boulder: stoneMaterial(air, FAR), vine: cardMaterial(air, { fly: VINE, walk: VINE }), farVine: cardMaterial(air, { fly: FAR, walk: FAR, from: VINE }), tech: techMaterial({ fly: MID, walk: MID }), farTech: techMaterial({ fly: FAR, walk: FAR, from: MID }) }),
+    () => ({ leaves: cardMaterial(air, { fly: 6, walk: CLOSE }), growth: cardMaterial(air, { fly: MID, walk: MID }), stone: stoneMaterial(air, MID), boulder: stoneMaterial(air, FAR), vine: cardMaterial(air, { fly: VINE, walk: VINE }), meshyLeaf: meshyLeafMaterial(air, VINE), farVine: cardMaterial(air, { fly: FAR, walk: FAR, from: VINE }), tech: techMaterial({ fly: MID, walk: MID }), farTech: techMaterial({ fly: FAR, walk: FAR, from: MID }) }),
     [air]
   );
   useEffect(() => () => Object.values(materials).forEach((material) => material.dispose()), [materials]);
@@ -86,7 +86,7 @@ export function useDressing(air: Air, tier: QualityTier) {
     const mid = { walls: slots(320), posts: slots(180) };
     const vine = { walls: slots(200), posts: slots(110) };
     const far = { walls: slots(560), posts: slots(300) };
-    const { leaves, growth, stone, boulder, vine: vineCards, farVine, tech, farTech } = materials;
+    const { leaves, growth, stone, boulder, vine: vineCards, farVine, tech, farTech, meshyLeaf } = materials;
     const span = CELL - THICK;
     const meshes = [
       dressed(leafGeometry(span, THICK, perMetre, false, 101), leaves, close.walls, "leaves"),
@@ -105,9 +105,12 @@ export function useDressing(air: Air, tier: QualityTier) {
       dressed(techGeometry(span, THICK, false, 601, true), tech, mid.walls, "tech"),
       dressed(techGeometry(THICK, THICK, true, 607, true), tech, mid.posts, "tech"),
       dressed(techGeometry(span, THICK, false, 601, false), farTech, far.walls, "tech"),
-      dressed(techGeometry(THICK, THICK, true, 607, false), farTech, far.posts, "tech")
+      dressed(techGeometry(THICK, THICK, true, 607, false), farTech, far.posts, "tech"),
+      // Meshy leaves sprinkled among the vines.
+      dressed(meshyLeafGeometry(span, THICK, false, 701), meshyLeaf, vine.walls, "meshy leaves"),
+      dressed(meshyLeafGeometry(THICK, THICK, true, 709), meshyLeaf, vine.posts, "meshy leaves")
     ];
-    const on = [close.walls, close.posts, mid.walls, mid.posts, mid.walls, mid.posts, far.walls, far.posts, vine.walls, vine.posts, far.walls, far.posts, mid.walls, mid.posts, far.walls, far.posts];
+    const on = [close.walls, close.posts, mid.walls, mid.posts, mid.walls, mid.posts, far.walls, far.posts, vine.walls, vine.posts, far.walls, far.posts, mid.walls, mid.posts, far.walls, far.posts, vine.walls, vine.posts];
     return { close, mid, vine, far, meshes, on };
   }, [materials, tier]);
 

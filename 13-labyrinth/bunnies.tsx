@@ -1,10 +1,9 @@
 "use client";
 
 import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as THREE from "three/webgpu";
 import { attribute, output, vec4 } from "three/tsl";
-import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { worldShifted } from "../shared/engine/extents";
 import { sound } from "../shared/engine/sound";
 import type { QualityTier } from "../shared/engine/types";
@@ -42,34 +41,17 @@ function blocked(i: number, j: number, di: number, dj: number) {
   return heights[at(i, j - 1) * 2 + 1] > 0.05;
 }
 
-// A rabbit, nose to -z, about thirty centimetres long: a round body, a head with long ears, a white puff of a tail.
-function bunnyGeometry(detail: number) {
-  const part = (geometry: THREE.BufferGeometry, scale: [number, number, number], at: [number, number, number], tint: string, tilt = 0) => {
-    geometry.scale(...scale);
-    geometry.rotateX(tilt);
-    geometry.translate(...at);
-    geometry.deleteAttribute("uv");
-    const colour = new THREE.Color(tint);
-    const count = geometry.getAttribute("position").count;
-    geometry.setAttribute("color", new THREE.Float32BufferAttribute(new Array(count).fill(0).flatMap(() => [colour.r, colour.g, colour.b]), 3));
-    return geometry;
-  };
-  // Smooth up close: the body fine, the ears less so, the eyes and nose only a little; all of it coarser on a phone.
-  const ball = (fine = 1) => new THREE.SphereGeometry(1, Math.max(6, Math.round(36 * fine * detail)), Math.max(4, Math.round(26 * fine * detail)));
-  const parts = [
-    part(ball(), [0.1, 0.095, 0.14], [0, 0.1, 0.01], "#f3f1ec"),
-    part(ball(), [0.085, 0.08, 0.08], [0, 0.09, 0.08], "#f1efe9"),
-    part(ball(), [0.06, 0.058, 0.07], [0, 0.18, -0.11], "#f5f3ee"),
-    part(ball(0.6), [0.018, 0.07, 0.011], [-0.026, 0.27, -0.1], "#efe2e0", 0.25),
-    part(ball(0.6), [0.018, 0.07, 0.011], [0.026, 0.27, -0.1], "#efe2e0", 0.25),
-    part(ball(0.6), [0.035, 0.035, 0.035], [0, 0.13, 0.15], "#ffffff"),
-    part(ball(0.35), [0.012, 0.01, 0.01], [0, 0.18, -0.178], "#d9a3a3"),
-    part(ball(0.35), [0.011, 0.012, 0.008], [-0.033, 0.195, -0.152], "#1a1414"),
-    part(ball(0.35), [0.011, 0.012, 0.008], [0.033, 0.195, -0.152], "#1a1414")
-  ];
-  const merged = mergeGeometries(parts);
-  parts.forEach((p) => p.dispose());
-  return merged;
+// A rabbit, nose to -z, about thirty-five centimetres long: a scanned white rabbit cut down to 300 triangles, its colours
+// (cream fur, pink ears and nose, dark eyes) baked into the corners in place of a texture, 4 kB in all.
+const BUNNY = "/assets/13-labyrinth/bunny/bunny";
+async function loadBunny() {
+  const [info, data] = await Promise.all([fetch(`${BUNNY}.json`).then((r) => r.json() as Promise<{ vertices: number; indices: number }>), fetch(`${BUNNY}.bin`).then((r) => r.arrayBuffer())]);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(data, 0, info.vertices * 3), 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(new Uint8Array(data, info.vertices * 12, info.vertices * 4), 4, true));
+  geometry.setIndex(new THREE.BufferAttribute(new Uint16Array(data, info.vertices * 16, info.indices), 1));
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
 type Bunny = { i: number; j: number; x: number; z: number; fromX: number; fromZ: number; di: number; dj: number; hop: number; t: number; rest: number; yaw: number; facing: number };
@@ -78,27 +60,35 @@ export function Bunnies({ air, tier }: { air: Air; tier: QualityTier }) {
   const camera = useThree((state) => state.camera);
   const count = tier === "high" ? 110 : tier === "medium" ? 75 : 30;
   const detail = tier === "high" ? 1 : tier === "medium" ? 0.6 : 0.4;
+  const [shape, setShape] = useState<THREE.BufferGeometry | null>(null);
+  useEffect(() => {
+    let live = true;
+    loadBunny().then((g) => (live ? setShape(g) : g.dispose()));
+    return () => {
+      live = false;
+    };
+  }, []);
   const { mesh, material } = useMemo(() => {
     const material = made(new THREE.MeshStandardNodeMaterial({ roughness: 0.9 }));
-    const fur = attribute("color", "vec3") as any;
+    const fur = (attribute("color", "vec4") as any).xyz as any;
     material.colorNode = fading(air, fur.mul(0.85));
     material.outputNode = vec4(throughMist(air, (output as any).rgb), 1) as any;
-    const mesh = new THREE.InstancedMesh(bunnyGeometry(detail), material, count);
+    const mesh = new THREE.InstancedMesh(shape ?? new THREE.BufferGeometry(), material, count);
     // Shadows only where there is the time to draw them twice.
     mesh.castShadow = detail > 0.5;
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
     mesh.count = 0;
     return { mesh, material };
-  }, [air, count, detail]);
+  }, [air, count, detail, shape]);
   useEffect(
     () => () => {
-      mesh.geometry.dispose();
       material.dispose();
       mesh.dispose();
     },
     [mesh, material]
   );
+  useEffect(() => () => shape?.dispose(), [shape]);
 
   const bunnies = useMemo<Bunny[]>(() => [], []);
   const seen = useMemo(sight, []);
@@ -239,5 +229,5 @@ export function Bunnies({ air, tier }: { air: Air; tier: QualityTier }) {
     if (process.env.NODE_ENV !== "production") Object.assign(globalThis, { __bunnies: bunnies });
   });
 
-  return <primitive object={mesh} />;
+  return shape ? <primitive object={mesh} /> : null;
 }

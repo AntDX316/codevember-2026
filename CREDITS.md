@@ -108,3 +108,17 @@ The rocks and sand under the water in Hollow are scans from [Poly Haven](https:/
 | [Gravelly Sand](https://polyhaven.com/a/gravelly_sand) | Dario Barresi |
 
 The fish is the [Barramundi Fish](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/BarramundiFish) by Microsoft, also CC0, from the Khronos glTF Sample Assets.
+
+## Kelp
+
+The rocks, reef and sand on the floor of Kelp are scans from [Poly Haven](https://polyhaven.com), all CC0, so no credit is required, but it is due. With those listed under Sea floor above (Rock Moss Set 02, Rock 09, Namaqualand Boulder 03 and Sand 01):
+
+| Asset | By |
+| --- | --- |
+| [Rock 07](https://polyhaven.com/a/rock_07) | Jenelle van Heerden |
+| [Coast Sand Rocks 02](https://polyhaven.com/a/coast_sand_rocks_02) | Rob Tuytel |
+| [Low Tide Rocks](https://polyhaven.com/a/low_tide_rocks) | Dimitrios Savva |
+
+## Meshy
+
+The rabbits and the leaves among the vines in Labyrinth are [Meshy](https://www.meshy.ai) models made for it, cut right down for the scene.
