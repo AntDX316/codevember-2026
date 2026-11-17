@@ -67,6 +67,8 @@ Where these appear, the code says so too.
 - **Vortex lattice and Biot–Savart induction**, for Feather's airflow: the standard method of aerodynamics texts such as Katz and Plotkin, *Low-Speed Aerodynamics* (2001)
 - **Perlin–Worley noise, Beer–Lambert and the Henyey–Greenstein phase function**, for Feather's clouds: after Schneider and Vos, "The Real-Time Volumetric Cloudscapes of Horizon Zero Dawn" (SIGGRAPH 2015)
 - **Hash without Sine**, for Labyrinth's noise: [Dave Hoskins](https://www.shadertoy.com/view/4djSRW)
+- **Tileable water caustic**, for Kelp's caustics and its surface from below: [Dave Hoskins](https://www.shadertoy.com/view/MdlXz8) (MIT)
+- **meshoptimizer**, which simplified Kelp's scanned rocks and Labyrinth's rabbit beforehand: [Arseny Kapoulkine](https://github.com/zeux/meshoptimizer) (MIT)
 - **Bump mapping without tangents**, for the veins in Labyrinth's leaves: Morten Mikkelsen, "Bump Mapping Unparametrized Surfaces on the GPU" (2010)
 
 ## Bird wings

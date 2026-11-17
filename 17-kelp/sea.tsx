@@ -1,11 +1,12 @@
 "use client";
 
 import { useFrame, useThree } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three/webgpu";
-import { Fn, attribute, cameraPosition, color, cos, cross, dot, exp, float, length, max, mix, mod, normalize, positionGeometry, positionWorld, pow, reflect, sin, smoothstep, uniform, varying, vec2, vec3, vec4 } from "three/tsl";
+import { Fn, attribute, cameraFar, cameraNear, cameraPosition, color, cos, cross, dot, exp, float, length, max, mix, mod, normalize, perspectiveDepthToViewZ, positionGeometry, positionView, positionWorld, pow, reflect, screenUV, sin, smoothstep, uniform, varying, vec2, vec3, vec4 } from "three/tsl";
 import { useDispose } from "../shared/engine/dispose";
 import { lehmer } from "../shared/engine/random";
+import { OVERLAY_LAYER, overlayLink } from "../shared/engine/Post";
 import { SURFACE, SWELL, environment, haze, sea, stirred, threads, through } from "./water";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- TSL's node types do not model every operator. */
@@ -96,7 +97,10 @@ export function Surface({ fine }: { fine: number }) {
       return world;
     };
     const world = placed();
-    material.positionNode = vec3(world.x, waves(world.xz, float(0)).h.add(SURFACE), world.z) as any;
+    // Out where the rings are metres apart they cannot follow the waves, and raising them would tilt whole flat
+    // triangles, their straight edges showing in the light; there the surface lies flat and only its shading has waves.
+    const reach = float(1).sub(smoothstep(14, 40, length((positionGeometry as any).xz))) as any;
+    material.positionNode = vec3(world.x, waves(world.xz, float(0)).h.mul(reach).add(SURFACE), world.z) as any;
     material.colorNode = Fn(() => {
       const P = positionWorld as any;
       const toP = P.sub(cameraPosition) as any;
@@ -104,13 +108,15 @@ export function Surface({ fine }: { fine: number }) {
       const fineDetail = smoothstep(30, 5, d) as any;
       // The waves' slopes, steepened for the shading: seen from below every ripple bends the sky about, and that is how
       // the waves show.
-      const g = waves(P.xz, fineDetail).g.mul(1.7) as any;
+      // Less so further off, where steep slopes would flip whole patches between window and mirror with a hard edge.
+      const g = waves(P.xz, fineDetail).g.mul(mix(float(0.8), float(1.7), fineDetail)) as any;
       const N = normalize(vec3(g.x.negate(), 1, g.y.negate())) as any;
       const V = toP.div(d) as any;
       const cosI = max(dot(V, N), 0) as any;
       // Light from the air bends in only within about 48.6° of straight up; beyond that the surface reflects.
       const sinT2 = float(1.333 * 1.333).mul(float(1).sub(cosI.mul(cosI))) as any;
-      const window = smoothstep(1.0, 0.82, sinT2) as any;
+      // A wide blend between the window and the mirror, so a wave's trough never cuts a dark shape out of the light.
+      const window = smoothstep(1.0, 0.5, sinT2) as any;
       // The way out through the surface into the air, bent at it: the sky seen that way is pale low down and deeper
       // blue overhead, so each wave's slope shows as a patch lighter or darker, and the sun as a broken glitter.
       const cosT = float(1).sub(sinT2).max(0).sqrt() as any;
@@ -128,7 +134,7 @@ export function Surface({ fine }: { fine: number }) {
       // colour, lighter on the faces of the waves that catch the light from below and darker in their troughs.
       const mirrored = haze(reflect(V, N.negate())) as any;
       const facing = dot(N, sea.toSun).mul(2).add(0.2).clamp(0.4, 1.4) as any;
-      const below = mix(mirrored, sea.shallow.mul(0.7), 0.4).mul(net.mul(0.4).add(0.75)).mul(facing) as any;
+      const below = mix(mirrored, sea.shallow.mul(0.85), 0.5).mul(net.mul(0.3).add(0.8)).mul(facing.mul(0.5).add(0.5)) as any;
       const rim = smoothstep(0.75, 0.98, sinT2).mul(window).mul(0.6) as any;
       // The sun seen through the water, a glow round it wherever the eye turns toward it.
       const toward = max(V.dot(sea.toSun), 0) as any;
@@ -149,8 +155,9 @@ export function Surface({ fine }: { fine: number }) {
 const eyeAt = uniform(new THREE.Vector3()) as any;
 
 // Shafts of sunlight down from the surface into the deep: long, all running the way the sun comes in, so that seen from
-// below they draw together toward one point far down, as they do in open water. Each is three planes crossed about its
-// line, so it reads as a soft column from any side, each plane fading as it turns edge-on. Each brightens and fades as
+// below they draw together toward one point far down, as they do in open water. Each is one strip turned about its own
+// line to face the eye, so it reads as a soft column from any side with no plane ever seen edge-on, and fades in at the
+// surface and out toward its far end so no end shows. Each brightens and fades as
 // the waves overhead gather the light and let it go. Laid out on the graphics card from the sun's direction, so they
 // swing round with it as the dial turns.
 export function Shafts({ count, long, spread }: { count: number; long: number; spread: number }) {
@@ -167,14 +174,14 @@ export function Shafts({ count, long, spread }: { count: number; long: number; s
       const z = Math.sin(a) * r + 2;
       const wide = 0.3 + random() ** 2 * 1.3;
       const seed = random() * 100;
-      for (let p = 0; p < 3; p++) {
+      {
         const base = top.length / 4;
         // Down the shaft in steps, so it can widen as it goes.
         const steps = 6;
         for (let k = 0; k <= steps; k++) {
           const u = k / steps;
           for (const across of [-1, 1]) {
-            top.push(x, z, wide, (p / 3) * Math.PI + seed);
+            top.push(x, z, wide, 0);
             shaft.push(across, u * LONG, seed, 0);
           }
           if (k < steps) {
@@ -189,21 +196,29 @@ export function Shafts({ count, long, spread }: { count: number; long: number; s
     geometry.setAttribute("aTop", new THREE.Float32BufferAttribute(top, 4));
     geometry.setAttribute("aShaft", new THREE.Float32BufferAttribute(shaft, 4));
     geometry.setIndex(index);
-    const material = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+    // Light added to what is behind, its colour only: additive blending would also pile up alpha over every strip's
+    // whole area, and where strips overlap the passes after would darken it into hard-edged wedges.
+    // Drawn in the overlay pass, added over the finished frame, not in the scene's own pass: there, light laid over
+    // everything would also be laid into the buffers the passes after read (normals, motion), and they would turn it
+    // into hard-edged shapes. What hides a shaft is worked out from the scene's depth instead (below).
+    const material = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, depthTest: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
     // The way the light runs under water, and two ways square to it to lay each plane out across it, turned about it.
     const A = attribute("aShaft", "vec4") as any;
     const T = attribute("aTop", "vec4") as any;
     const downward = (sea.toSun as any).negate() as any;
-    const side0 = normalize(cross(downward, vec3(0, 1, 0))) as any;
-    const face0 = cross(downward, side0) as any;
-    const side = side0.mul(cos(T.w)).add(face0.mul(sin(T.w))) as any;
     const width = T.z.mul(A.y.div(LONG).mul(1.5).add(1)) as any;
     // Each shaft drifts a little as the waves overhead move, and its light comes and goes with the same moving net of
     // threads that lays the caustics on the floor, read where it meets the surface.
     const t0 = sea.clock as any;
     const sway = vec3(sin(t0.mul(0.23).add(A.z)), 0, cos(t0.mul(0.17).add(A.z.mul(1.3)))).mul(float(0.45).sub(A.y.div(LONG).mul(0.3))) as any;
-    const top0 = vec3(T.x, SURFACE, T.y).add(sway) as any;
-    material.positionNode = top0.add(downward.mul(A.y)).add(side.mul(A.x.mul(width))) as any;
+    // Starting a metre down, under the deepest trough, so the waves never cut across a lit part of the shaft.
+    const top0 = vec3(T.x, SURFACE - 1, T.y).add(sway) as any;
+    // Turned about its own line to face the eye, as one flat piece: aimed from its middle, so it never twists along its
+    // length and folds over itself when the eye is close.
+    const onLine = top0.add(downward.mul(A.y)) as any;
+    const middle = top0.add(downward.mul(LONG / 2)) as any;
+    const side = normalize(cross(downward, (cameraPosition as any).sub(middle))) as any;
+    material.positionNode = onLine.add(side.mul(A.x.mul(width))) as any;
     const S = varying(A) as any;
     const face = varying(normalize(cross(side, downward))) as any;
     // How much light the waves are gathering into the shaft just now: the same for the whole shaft, so worked out once
@@ -215,31 +230,49 @@ export function Shafts({ count, long, spread }: { count: number; long: number; s
       const across = S.x as any;
       const depth = S.y as any;
       // Soft right across, no edge to it: a bell that has fallen to nothing well before the plane ends.
+      // (Edges low to high throughout: smoothstep with them reversed is undefined on some GPUs.)
       const soft = exp(across.mul(across).mul(-4.5)).sub(0.011).max(0) as any;
       // Strong near the top, fading slowly down into the blue, and coming in softly from the surface so no plane's end shows.
-      const fall = float(1).div(depth.mul(0.09).add(1)).mul(smoothstep(0, 2.5, depth)) as any;
+      const fall = float(1).div(depth.mul(0.09).add(1)).mul(smoothstep(0, 2.5, depth)).mul(float(1).sub(smoothstep(LONG * 0.55, LONG, depth))) as any;
       const t = sea.clock as any;
       const breathe = gathered;
       const ripple = sin(depth.mul(0.31).sub(t.mul(0.23)).add(S.z.mul(2.3))).mul(0.15).add(0.85) as any;
       const toP = P.sub(cameraPosition) as any;
       const d = length(toP) as any;
-      const near = smoothstep(0.6, 4, d) as any;
+      const near = smoothstep(1.5, 6, d) as any;
+      // Faced from its middle, a long strip is still seen at a slant toward its ends; nearly edge-on its soft falloff
+      // across would squeeze into a hard line, so it fades out as it turns away.
+      const facing = smoothstep(0.15, 0.6, normalize(face).dot(toP.div(d)).abs()) as any;
       // Faded out before they reach the floor, so no plane is seen cutting into the sand.
       const above = smoothstep(0.3, 2.6, P.y) as any;
-      // A plane seen edge-on would show as a hard line: each fades as it turns away.
-      const facing = normalize(face).dot(toP.div(d)).abs().pow(1.4) as any;
+      // And faded out by how far under the surface they are, not just along their line: a strip leans with the sun, so
+      // its upper corners reach up into the waves, which would cut them off along a hard line.
+      const under = float(1).sub(smoothstep(SURFACE - 3.8, SURFACE - 1.2, P.y)) as any;
       // Looked at along their length, from below or toward the sun, shafts melt into one glow rather than show their sides.
-      const along = smoothstep(0.995, 0.85, toP.div(d).dot(downward).abs()) as any;
-      const bright = soft.mul(fall).mul(breathe.mul(breathe).mul(0.8).add(0.2)).mul(ripple).mul(near).mul(above).mul(facing).mul(along).mul(sea.shafts).mul(sea.power).mul(0.012) as any;
+      const along = float(1).sub(smoothstep(0.85, 0.995, toP.div(d).dot(downward).abs())) as any;
+      const bright = soft.mul(fall).mul(breathe.mul(breathe).mul(0.8).add(0.2)).mul(ripple).mul(near).mul(facing).mul(above).mul(under).mul(along).mul(sea.shafts).mul(sea.power).mul(0.04) as any;
       // Lit water seen through the water between it and the eye, which turns it blue the further it is.
-      return vec4((sea.sun as any).mul(vec3(0.7, 0.92, 1)).mul(bright).mul(through(d.mul(0.7))), 1);
+      return vec4((sea.sun as any).mul(vec3(0.7, 0.92, 1)).mul(bright).mul(through(d.mul(1.4))).max(0), 1);
     })() as any;
     const mesh = new THREE.Mesh(geometry, material);
     mesh.frustumCulled = false;
-    mesh.renderOrder = 3;
+    mesh.layers.set(OVERLAY_LAYER);
     return { mesh, material };
   }, [count, long, spread]);
   useDispose(mesh.geometry, material);
+  // Hidden behind what stands in front of it, by the scene's depth, softly; but only by things within a dozen metres:
+  // anything further is all but lost in the haze, and would otherwise cut its outline out of the light as a hard shape.
+  useEffect(
+    () =>
+      overlayLink.listen((depth) => {
+        const scene = (perspectiveDepthToViewZ(depth.sample(screenUV).r, cameraNear, cameraFar) as any).negate() as any;
+        const own = (positionView as any).z.negate() as any;
+        const shown = smoothstep(-0.6, 0.6, scene.sub(own)).max(smoothstep(10, 16, scene)) as any;
+        material.opacityNode = shown;
+        material.needsUpdate = true;
+      }),
+    [material]
+  );
   return <primitive object={mesh} />;
 }
 

@@ -16,20 +16,19 @@ Run it locally with `npm run dev` from the repo root, then open <http://localhos
 
 ### 3D capture
 
-- The post is a real one, on a beach, captured by walking around it with a phone in the Polycam app. Its video is broken into hundreds of frames, and structure from motion finds where the camera stood for each one, and a sparse cloud of points the frames agree on.
-- From that start, 3D Gaussian splatting trains the scene: millions of soft, coloured, see-through ellipsoids, each nudged in position, shape, colour and opacity until, drawn from every camera's place, they reproduce its frame. The same method runs in open tools such as Nerfstudio's Splatfacto.
-- The result is saved as SPZ, a compressed splat format, 12 MB for 875,000 Gaussians. The beach behind is a second splat scene, made from a single photograph of a sunset.
+- A real beach post scanned by phone in Polycam; structure from motion solves the camera poses and a sparse point cloud.
+- 3D Gaussian splatting trains soft ellipsoids to match every frame, saved as a 12 MB SPZ of 875,000 Gaussians.
+- The beach behind is a second splat scene made from a single sunset photograph.
 
 ### Rendering
 
-- React Three Fiber and three.js r187 on the WebGPU renderer. The splats are loaded from SPZ and drawn by three.js's own GaussianSplat, written in TSL.
-- About 1.5 million Gaussians are drawn on the GPU each frame: around 340,000 kept of the post scan's 875,000, and 1.18 million in the beach. They are depth-sorted every frame by a compute counting sort.
-- As the scan loads it is cropped to a cylinder around the post, its edge faded out, and stray sky and floating blobs are dropped by colour and size. A solid core hidden inside the post stops what passes behind from showing through its thinner splats.
+- three.js r187's TSL GaussianSplat on WebGPU draws about 1.5 million Gaussians a frame, depth-sorted by a compute counting sort.
+- The scan is cropped to a faded cylinder, stray sky and blobs culled by colour and size, with a solid core so nothing shows through.
 
 ### Sea and sky
 
-- The water is Day 7's Tessendorf FFT ocean, ported from Ultra Water, mirroring the scene and thinning with distance into the photograph's own sea. A wash of foam runs up the sand at the photograph's surf line.
-- Sailboats, fishing boats and flocks of gulls are instanced meshes, the gulls' wings flapped and glided in the vertex shader. A sheet of cloud drifts overhead, and the camera floats as if held.
-- Splats write no depth, so depth of field cannot read them: the soft edges of the frame are a screen-space blur instead.
+- Day 7's Tessendorf FFT ocean mirrors the scene and fades into the photo's sea, with foam at its surf line.
+- Boats and gulls are instanced meshes, gull wings flapped in the vertex shader, under a drifting cloud sheet.
+- Splats write no depth, so the soft frame edges are a screen-space blur rather than depth of field.
 
 Everyone whose work Codevember builds on is listed in [CREDITS.md](../CREDITS.md).
