@@ -568,6 +568,32 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.cv-control-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* A small Reset beside a slider's value, shown while it is away from its rest. */
+.cv-reset-value {
+  appearance: none;
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: var(--cv-dim);
+  background: transparent;
+  border: 1px solid var(--cv-line);
+  border-radius: 999px;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+
+.cv-reset-value:hover {
+  color: var(--cv-ink);
+  border-color: var(--cv-faint);
+}
+
 .cv-range {
   --fill: 50%;
   appearance: none;
@@ -662,6 +688,77 @@ body {
 
 .cv-swatch {
   display: inline-flex;
+}
+
+/* A colour pad: hue across, white through the pure hue to black down, with a glowing thumb in the picked colour. */
+.cv-colour-pad {
+  position: relative;
+  height: 92px;
+  margin-top: 6px;
+  border-radius: 10px;
+  cursor: crosshair;
+  touch-action: none;
+  background:
+    linear-gradient(to bottom, #fff 0%, rgba(255, 255, 255, 0) 50%, rgba(0, 0, 0, 0) 50%, #000 100%),
+    linear-gradient(to right, #f00, #ff0 16.67%, #0f0 33.33%, #0ff 50%, #00f 66.67%, #f0f 83.33%, #f00);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 6px 18px rgba(0, 0, 0, 0.35);
+  outline: none;
+}
+
+.cv-colour-pad:focus-visible {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 0 0 2px var(--cv-ink);
+}
+
+.cv-colour-thumb {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  box-shadow:
+    0 0 0 2.5px #fff,
+    0 0 0 3.5px rgba(0, 0, 0, 0.35),
+    0 3px 10px rgba(0, 0, 0, 0.5);
+  transition: transform 0.15s ease;
+}
+
+.cv-colour-pad:active .cv-colour-thumb {
+  transform: translate(-50%, -50%) scale(1.25);
+}
+
+.cv-colour-presets {
+  display: flex;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.cv-colour-chip {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.25),
+    0 2px 6px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.cv-colour-chip:hover {
+  transform: scale(1.12);
+}
+
+.cv-colour-chip-on {
+  box-shadow:
+    0 0 0 2px #08090c,
+    0 0 0 3.5px var(--cv-ink);
 }
 
 .cv-swatch i {
@@ -819,6 +916,33 @@ body {
   padding-bottom: 18vh;
   text-align: center;
   pointer-events: none;
+}
+
+@media (min-width: 901px) and (hover: hover) {
+  .cv-prompt.cv-prompt-high {
+    padding-bottom: 74vh;
+    padding-left: 8vw;
+  }
+
+  /* Low: under a subject that hangs in the middle, smaller, so it reads as a caption to it. */
+  .cv-prompt.cv-prompt-low {
+    padding-bottom: 0;
+    padding-top: 4vh;
+    padding-left: 2vw;
+  }
+
+  .cv-prompt.cv-prompt-low p {
+    font-size: clamp(30px, 3.1vw, 46px);
+  }
+}
+
+/* Short of a wide screen, a high or low prompt breaks into two even lines so it stays clear of the controls. */
+@media (min-width: 901px) and (max-width: 1600px) and (hover: hover) {
+  .cv-prompt.cv-prompt-high p,
+  .cv-prompt.cv-prompt-low p {
+    max-width: 11.5em;
+    text-wrap: balance;
+  }
 }
 
 .cv-prompt p {

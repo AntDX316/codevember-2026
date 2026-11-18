@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type Compon
 import { dayHref, days, promptDayFor, type CodevemberDay } from "../days";
 import { narrowScreen, type QualityChoice } from "../engine/quality";
 import type { SettingsStore } from "../engine/settings";
-import type { OverviewSection, QualityTier, Setting } from "../engine/types";
+import type { ColourSetting, OverviewSection, QualityTier, Setting } from "../engine/types";
 import { resetPrompt, usePromptDone } from "../engine/prompt";
 import { GithubIcon, REPO } from "./github";
 import { FollowCard } from "./Follow";
@@ -20,6 +20,104 @@ import { FrameGraph } from "./FrameGraph";
 import { Overview } from "./Overview";
 
 const pad = (day: number) => String(day).padStart(2, "0");
+
+// The colour pad: hue across, and down from white through the pure hue to black. That is HSL at full saturation, which
+// is exactly what the two CSS gradients over a rainbow draw, so the colour under the pointer is the one picked.
+const PALE = 0.97;
+const DARK = 0.06;
+const hslHex = (h: number, l: number) => {
+  const a = Math.min(l, 1 - l);
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12;
+    const c = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(c * 255)
+      .toString(16)
+      .padStart(2, "0");
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+};
+const hexHsl = (hex: string) => {
+  const n = parseInt(hex.slice(1), 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => c / 255);
+  const hi = Math.max(r, g, b);
+  const lo = Math.min(r, g, b);
+  const l = (hi + lo) / 2;
+  const d = hi - lo;
+  let h = 0;
+  if (d > 0) h = hi === r ? ((g - b) / d + 6) % 6 : hi === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return { h: h * 60, l };
+};
+
+function ColourControl({ name, setting, store, value }: { name: string; setting: ColourSetting; store: SettingsStore; value: string }) {
+  const area = useRef<HTMLDivElement>(null);
+  const ticked = useRef(0);
+  const { h, l } = hexHsl(value);
+  const set = (hue: number, light: number) => {
+    store.set(name, hslHex(((hue % 360) + 360) % 360, Math.min(PALE, Math.max(DARK, light))));
+    const now = performance.now();
+    if (now - ticked.current > 70) {
+      sound.play("click", { gain: 0.22, pitch: 1.1 + Math.random() * 0.3 });
+      ticked.current = now;
+    }
+  };
+  const pick = (event: React.PointerEvent) => {
+    const box = area.current!.getBoundingClientRect();
+    const x = Math.min(1, Math.max(0, (event.clientX - box.left) / box.width));
+    const y = Math.min(1, Math.max(0, (event.clientY - box.top) / box.height));
+    set(x * 359.9, PALE - y * (PALE - DARK));
+  };
+  return (
+    <div className="cv-control">
+      <span className="cv-control-label">
+        {setting.label}
+        <output>{value.toUpperCase()}</output>
+      </span>
+      <div
+        ref={area}
+        className="cv-colour-pad"
+        role="slider"
+        tabIndex={0}
+        aria-label={setting.label}
+        aria-valuetext={value}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          pick(event);
+        }}
+        onPointerMove={(event) => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) pick(event);
+        }}
+        onKeyDown={(event) => {
+          const move: Record<string, [number, number]> = { ArrowLeft: [-6, 0], ArrowRight: [6, 0], ArrowUp: [0, 0.04], ArrowDown: [0, -0.04] };
+          const m = move[event.key];
+          if (!m) return;
+          event.preventDefault();
+          set(h + m[0], l + m[1]);
+        }}
+      >
+        <i className="cv-colour-thumb" style={{ left: `${(h / 360) * 100}%`, top: `${((PALE - Math.min(PALE, Math.max(DARK, l))) / (PALE - DARK)) * 100}%`, background: value }} />
+      </div>
+      {setting.presets ? (
+        <div className="cv-colour-presets">
+          {setting.presets.map((preset) => (
+            <button
+              key={preset.colour}
+              type="button"
+              title={preset.label}
+              aria-label={preset.label}
+              aria-pressed={preset.colour.toLowerCase() === value.toLowerCase()}
+              className={`cv-colour-chip ${preset.colour.toLowerCase() === value.toLowerCase() ? "cv-colour-chip-on" : ""}`}
+              style={{ background: preset.colour }}
+              onClick={() => {
+                store.set(name, preset.colour);
+                sound.play("click", { gain: 0.4 });
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 // A word on a button that changes: the new one comes up as the old one goes.
 function Swap({ text }: { text: string }) {
@@ -142,6 +240,8 @@ function Control({ name, setting, store }: { name: string; setting: Setting; sto
     );
   }
 
+  if (setting.type === "colour") return <ColourControl name={name} setting={setting} store={store} value={value as string} />;
+
   if (setting.type === "choice") {
     return (
       <div className="cv-control">
@@ -178,7 +278,22 @@ function Control({ name, setting, store }: { name: string; setting: Setting; sto
     <label className="cv-control">
       <span className="cv-control-label">
         {setting.label}
-        <output>{setting.step && setting.step >= 1 ? number : number.toFixed(2)}</output>
+        <span className="cv-control-value">
+          {setting.reset !== undefined && Math.abs(number - setting.reset) > 1e-6 ? (
+            <button
+              type="button"
+              className="cv-reset-value"
+              onClick={(event) => {
+                event.preventDefault();
+                store.set(name, setting.reset!);
+                sound.play("click", { gain: 0.4 });
+              }}
+            >
+              Reset
+            </button>
+          ) : null}
+          <output>{setting.step && setting.step >= 1 ? number : number.toFixed(2)}</output>
+        </span>
       </span>
       <input
         type="range"
@@ -234,6 +349,25 @@ function PhonePill({ name, setting, store }: { name: string; setting: Setting; s
       </button>
     );
   }
+  if (setting.type === "colour")
+    return (
+      <>
+        {setting.presets?.map((preset) => (
+          <button
+            key={preset.colour}
+            type="button"
+            className={`cv-pill ${preset.colour.toLowerCase() === String(value).toLowerCase() ? "cv-pill-on" : ""}`}
+            aria-pressed={preset.colour.toLowerCase() === String(value).toLowerCase()}
+            onClick={() => store.set(name, preset.colour)}
+          >
+            <span className="cv-swatch" aria-hidden="true">
+              <i style={{ background: preset.colour }} />
+            </span>
+            {preset.label}
+          </button>
+        ))}
+      </>
+    );
   if (setting.type !== "choice") return null;
   return (
     <>
@@ -262,7 +396,7 @@ const CHOICES: { value: QualityChoice; label: string }[] = [
 type HudProps = {
   day: CodevemberDay;
   hint?: string;
-  prompt?: { title: string; detail?: string };
+  prompt?: { title: string; detail?: string; high?: boolean; low?: boolean };
   notes?: string;
   overview?: OverviewSection[];
   Overlay?: ComponentType;
@@ -277,7 +411,7 @@ type HudProps = {
 
 function ControlRow({ name, setting, store }: { name: string; setting: Setting; store: SettingsStore }) {
   const chosen = useSyncExternalStore(store.subscribe, () => (setting.when ? store.get(setting.when.setting) : null), () => null);
-  if (setting.when && chosen !== setting.when.is) return null;
+  if (setting.when && ("is" in setting.when ? chosen !== setting.when.is : chosen === setting.when.not)) return null;
   return (
     <motion.div className="cv-panel-row" variants={rise}>
       <Control name={name} setting={setting} store={store} />
@@ -455,7 +589,7 @@ export function Hud({ day, hint, prompt, notes, overview, Overlay, settings, pho
 
       <AnimatePresence>
         {prompt && !promptDone ? (
-          <motion.div className="cv-prompt" key={`prompt-${day.day}`} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10, scale: 0.97 }} transition={SETTLE}>
+          <motion.div className={`cv-prompt ${prompt.high ? "cv-prompt-high" : prompt.low ? "cv-prompt-low" : ""}`} key={`prompt-${day.day}`} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10, scale: 0.97 }} transition={SETTLE}>
             <i aria-hidden="true" />
             <p>{prompt.title}</p>
             {prompt.detail ? <small>{prompt.detail}</small> : null}

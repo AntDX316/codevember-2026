@@ -51,6 +51,12 @@ export const HAZE_LAYER = 10;
 // How far away the lens is focused. A day that asks for depth of field keeps this up to date.
 export const focusDistance = uniform(12);
 export const focusBlur = uniform(1);
+// A scene can draw straight to the screen while it has nothing for the passes to do, such as a flat page. Off unless a
+// scene sets it, and that scene clears it when it goes.
+export const postBypass = { current: false };
+// A scene resting on something flat, such as a page, can ask for it untouched: no depth of field and no edge smoothing, so
+// that its text comes out texel for pixel. Off unless a scene sets it, and that scene clears it when it goes.
+export const postSharp = uniform(0);
 export const airTint = uniform(new THREE.Color("#d8c8b4"));
 export const airAmount = uniform(1);
 // How much the edges of the frame streak outward, as when running flat out; set by the walk.
@@ -108,6 +114,12 @@ type PostProps = {
   depthOfField?: DepthOfField;
   sideBlur?: SideBlur;
   rush?: boolean;
+  // "none" leaves the image unmapped; otherwise neutral tone mapping.
+  toneMapping?: "none";
+  // false: FXAA in each frame instead of the temporal filter, and none at all on a dense screen.
+  temporal?: false;
+  // false: no ambient occlusion pass.
+  occlusion?: false;
   // How far the colours split at the edge of the frame. Nothing on the low tier.
   chromatic?: number;
   phase: RefObject<RenderPhase>;
@@ -117,7 +129,7 @@ type PostProps = {
 //   high    SSGI (bounce + AO), haze, bloom, TRAA
 //   medium  GTAO, haze, bloom, TRAA
 //   low     bloom and FXAA, for phones and slow machines
-export function Post({ look, quality, hasHaze, bounce = true, halfBounce = false, overlay = false, depthOfField, sideBlur, chromatic, rush = false, phase }: PostProps) {
+export function Post({ look, quality, hasHaze, bounce = true, halfBounce = false, overlay = false, depthOfField, sideBlur, chromatic, rush = false, toneMapping, temporal, occlusion, phase }: PostProps) {
   const gl = useThree((state) => state.gl) as unknown as THREE.WebGPURenderer;
   const scene = useThree((state) => state.scene);
   const camera = useThree((state) => state.camera) as THREE.PerspectiveCamera;
@@ -129,7 +141,9 @@ export function Post({ look, quality, hasHaze, bounce = true, halfBounce = false
       aoStrength: uniform(look.ao),
       aoReach: uniform(look.aoReach),
       grain: uniform(look.grain),
-      vignette: uniform(look.vignette)
+      vignette: uniform(look.vignette),
+      // Whether FXAA is on, where temporal is false: set each frame from the screen's density.
+      smoothing: uniform(1)
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
@@ -166,7 +180,7 @@ export function Post({ look, quality, hasHaze, bounce = true, halfBounce = false
       const depth = scenePass.getTextureNode("depth");
       const normalNode = scenePass.getTextureNode("normal");
       const decodedNormal = sample((uv: any) => unpackRGBToNormal(normalNode.sample(uv)));
-      useTemporal = true;
+      useTemporal = temporal !== false;
 
       if (tier === "high" && bounce) {
         const giPass: any = ssgi(beauty, depth, decodedNormal as any, camera);
@@ -186,6 +200,8 @@ export function Post({ look, quality, hasHaze, bounce = true, halfBounce = false
         const occlusion = giPass.getAONode().r;
         const bounceLight = giPass.getGINode().rgb;
         color = vec4(add(beauty.rgb.mul(occlusion), diffuse.rgb.mul(bounceLight)), beauty.a);
+      } else if (occlusion === false) {
+        color = beauty;
       } else {
         const aoPass: any = ao(depth, decodedNormal as any, camera);
         aoPass.resolutionScale = 0.5;
@@ -219,9 +235,9 @@ export function Post({ look, quality, hasHaze, bounce = true, halfBounce = false
     // pixel can sample it straight off rather than first copying it out at full size.
     let held: any = null;
     if (useTemporal) {
-      const temporal: any = traa(color, scenePass.getTextureNode("depth"), scenePass.getTextureNode("velocity"), camera);
-      color = temporal;
-      held = temporal.getTextureNode();
+      const blended: any = traa(color, scenePass.getTextureNode("depth"), scenePass.getTextureNode("velocity"), camera);
+      color = blended;
+      held = blended.getTextureNode();
     }
 
     // Air between the lens and whatever it sees, thickening with distance up to a limit.
@@ -237,7 +253,7 @@ export function Post({ look, quality, hasHaze, bounce = true, halfBounce = false
     if (depthOfField && tier !== "low") {
       const viewZ = scenePass.getViewZNode() as any;
       const blurred: any = dof(color, isSky ? isSky.select((focusDistance as any).negate(), viewZ) : viewZ, focusDistance, uniform(depthOfField.range), focusBlur);
-      color = blurred;
+      color = postSharp.greaterThan(0.5).select(color, blurred);
       held = blurred.getTextureNode();
     }
 
@@ -294,8 +310,9 @@ export function Post({ look, quality, hasHaze, bounce = true, halfBounce = false
     color = vec4(color.rgb.add(glow.rgb), 1);
 
     // Display transform, then grade in display space so grain sits on top of the image.
-    let graded: any = renderOutput(color, THREE.NeutralToneMapping, THREE.SRGBColorSpace);
-    if (tier === "low") graded = fxaa(graded);
+    let graded: any = renderOutput(color, toneMapping === "none" ? THREE.NoToneMapping : THREE.NeutralToneMapping, THREE.SRGBColorSpace);
+    if (temporal === false) graded = uniforms.smoothing.greaterThan(0.5).select(fxaa(graded), graded);
+    else if (tier === "low") graded = fxaa(graded);
 
     const fromCentre = length(screenUV.sub(vec2(0.5)).mul(vec2(1.15, 1)));
     const falloff = float(1).sub(fromCentre.sub(0.35).max(0).mul(uniforms.vignette).mul(2.2));
@@ -306,7 +323,7 @@ export function Post({ look, quality, hasHaze, bounce = true, halfBounce = false
     return { stack, tuners, hazeDepth, sceneDepth };
     // Only the things that change the graph's shape are dependencies. Look values go through tuners.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gl, scene, camera, quality, hasHaze, bounce, overlay, depthOfField, sideBlur, chromatic, rush, halfBounce, uniforms]);
+  }, [gl, scene, camera, quality, hasHaze, bounce, overlay, depthOfField, sideBlur, chromatic, rush, halfBounce, toneMapping, temporal, occlusion, uniforms]);
 
   useEffect(() => {
     gl.toneMappingExposure = look.exposure;
@@ -330,7 +347,9 @@ export function Post({ look, quality, hasHaze, bounce = true, halfBounce = false
   // Priority 1 takes over from R3F's own render call.
   useFrame(() => {
     if (phase.current === "hold") return;
-    stack.render();
+    if (temporal === false) uniforms.smoothing.value = gl.getPixelRatio() < 1.75 && postSharp.value < 0.5 ? 1 : 0;
+    if (postBypass.current) gl.render(scene, camera);
+    else stack.render();
   }, 1);
 
   return null;

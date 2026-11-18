@@ -94,6 +94,8 @@ class SoundEngine {
   private musicElement: HTMLAudioElement | null = null;
   private musicGain: GainNode | null = null;
   private wantedMusic: { url: string; level: number } | null = null;
+  // Set by `fadeMusic`: the track asked for is let die away, until another is asked for or it is brought back.
+  private musicFading = false;
   // Whether the element has played once from a press. On a phone only that lets it start again later on its own.
   private primed = false;
   private missingMusic = new Set<string>();
@@ -199,7 +201,7 @@ class SoundEngine {
     const element = this.element();
     if (element.src !== url) element.src = url;
     // Also when it is already playing: it may be on its way out, if the same track has just been asked for again.
-    (this.musicGain as GainNode).gain.setTargetAtTime(wanted.level, this.context.currentTime, 0.8);
+    if (!this.musicFading) (this.musicGain as GainNode).gain.setTargetAtTime(wanted.level, this.context.currentTime, 0.8);
     if (!element.paused) return;
     element
       .play()
@@ -244,15 +246,35 @@ class SoundEngine {
     });
   }
 
+  // Lets the track playing die away over about `seconds`, rather than stopping short when it is let go: for leaving a day
+  // slowly. Nothing else changes unless asked; the next track asked for comes in as usual.
+  fadeMusic(seconds: number) {
+    this.musicFading = true;
+    if (!this.context || !this.musicGain) return;
+    const gain = this.musicGain.gain;
+    const now = this.context.currentTime;
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(gain.value, now);
+    gain.setTargetAtTime(0, now, seconds / 4);
+  }
+
+  // The track let die away by `fadeMusic`, brought back after all.
+  unfadeMusic() {
+    if (!this.musicFading) return;
+    this.musicFading = false;
+    this.startMusic();
+  }
+
   // Asks for a day's track, and returns what stops it again.
   music(url: string, level: number) {
+    this.musicFading = false;
     const wanted = { url, level };
     this.wantedMusic = wanted;
     this.startMusic();
     return () => {
       if (this.wantedMusic !== wanted) return;
       this.wantedMusic = null;
-      if (this.context && this.musicGain) this.musicGain.gain.setTargetAtTime(0, this.context.currentTime, 0.15);
+      if (this.context && this.musicGain && !this.musicFading) this.musicGain.gain.setTargetAtTime(0, this.context.currentTime, 0.15);
       window.setTimeout(() => {
         if (!this.wantedMusic) this.musicElement?.pause();
       }, 700);
@@ -389,6 +411,14 @@ class SoundEngine {
     node.onended = () => {
       this.voices--;
     };
+  }
+
+  // A one-shot of the caller's own making, for a sound none of these is: given the context, the node to connect it to and
+  // when to start it. Quietly does nothing until audio has been woken by a press, while muted, or if too much is sounding.
+  custom(make: (context: AudioContext, out: AudioNode, at: number) => void) {
+    const context = this.context;
+    if (!context || context.state !== "running" || this.muted || this.voices > MAX_VOICES || !this.master) return;
+    make(context, this.master, context.currentTime + 0.002);
   }
 
   // Fire a one-shot. Quietly does nothing until audio has been woken by a press, or if too much is sounding.

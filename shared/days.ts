@@ -58,7 +58,8 @@ const LIVE: Record<number, string> = {
   14: "An orb web beaded with dew, in four weathers. Pluck a thread and the spider comes running.",
   15: "A little desert whose sand turns to water under your hand, and grows into an oasis.",
   16: "A forest floor at night where spores you let go grow into a glowing, spreading bloom.",
-  17: "A kelp forest under a moving surface, with sardines that come by to look at you. Stir the water, pull the kelp about, and move the sun."
+  17: "A kelp forest under a moving surface, with sardines that come by to look at you. Stir the water, pull the kelp about, and move the sun.",
+  18: "A can of paint swinging on a rope over a canvas in a daylit studio. Toss it and it draws; spin the bucket or the canvas, and keep the painting."
 };
 
 const CODEVEMBER_YEAR = 2026;

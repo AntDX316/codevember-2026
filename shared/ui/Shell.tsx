@@ -26,7 +26,7 @@ const RELOADED = "cv-reloaded";
 const isLoadFailure = (error: Error) => /chunk|loading .*failed|failed to fetch|importing a module|module script/i.test(`${error.name} ${error.message}`);
 
 // Anything that goes wrong in the 3D stops here, and not at the bare error page of the whole site.
-class CrashScreen extends Component<{ children: ReactNode }, { error: Error | null }> {
+export class CrashScreen extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
 
   static getDerivedStateFromError(error: Error) {

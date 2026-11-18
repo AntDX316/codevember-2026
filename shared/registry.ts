@@ -18,5 +18,6 @@ export const dayLoaders: Record<string, () => Promise<{ default: DayDefinition }
   "14-tension": () => import("../14-tension"),
   "15-mirage": () => import("../15-mirage"),
   "16-spore": () => import("../16-spore"),
-  "17-kelp": () => import("../17-kelp")
+  "17-kelp": () => import("../17-kelp"),
+  "18-pendulum": () => import("../18-pendulum")
 };

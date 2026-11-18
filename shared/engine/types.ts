@@ -9,6 +9,8 @@ export type RangeSetting = {
   phoneMax?: number;
   step?: number;
   value: number;
+  // Shows a small Reset beside the label whenever the slider is away from this value, and sets it back.
+  reset?: number;
 };
 
 export type ToggleSetting = {
@@ -33,10 +35,20 @@ export type ActionSetting = {
   label: string;
 };
 
-// A control can belong to one choice of another setting, and only shows while that is chosen.
+// Any colour, picked off a gradient pad (hue across, pale to vivid to dark down), with a row of preset chips. The value
+// is a hex string.
+export type ColourSetting = {
+  type: "colour";
+  label: string;
+  value: string;
+  presets?: { label: string; colour: string }[];
+};
+
+// A control can belong to one choice of another setting, and only shows while that is chosen; or with `not`, shows
+// for every choice but that one.
 export type OverviewSection = { title: string; points: string[] };
 
-export type Setting = (RangeSetting | ToggleSetting | ChoiceSetting | ActionSetting) & { when?: { setting: string; is: string | boolean } };
+export type Setting = (RangeSetting | ToggleSetting | ChoiceSetting | ActionSetting | ColourSetting) & { when?: { setting: string; is: string | boolean } | { setting: string; not: string | boolean } };
 export type SettingsSchema = Record<string, Setting>;
 export type SettingValue = number | boolean | string;
 
@@ -107,7 +119,11 @@ export type DayDefinition = {
   autoStart?: QualityTier;
   // Passes a scene has no use for, so it need not pay for them. Both default to on.
   // halfBounce traces the bounce light at half size, for a day that needs the time more than the detail.
-  passes?: { bounce?: boolean; halfBounce?: boolean; haze?: boolean; overlay?: boolean; depthOfField?: DepthOfField; sideBlur?: SideBlur; chromatic?: number; rush?: boolean };
+  // toneMapping "none": the image as rendered, unmapped, for a scene drawn straight to the screen at times that must match it.
+  // temporal false: edges smoothed within each frame (FXAA) rather than across frames, and only on a screen of under 1.75 CSS
+  // pixels to the device pixel, where the edges need it; for a scene that must look the same from its first frame.
+  // occlusion false: no shading in creases, for a scene that has none to show.
+  passes?: { bounce?: boolean; halfBounce?: boolean; haze?: boolean; overlay?: boolean; depthOfField?: DepthOfField; sideBlur?: SideBlur; chromatic?: number; rush?: boolean; toneMapping?: "none"; temporal?: false; occlusion?: false };
   settings?: SettingsSchema;
   hint?: string;
   // How the scene is made, in a couple of sentences. Shown under the wordmark on desktop.
@@ -115,7 +131,8 @@ export type DayDefinition = {
   // How it is built, in more depth: a few short sections behind a collapsed panel under the notes, on desktop.
   overview?: OverviewSection[];
   // Shown in the middle of the screen until the day calls dismissPrompt.
-  prompt?: { title: string; detail?: string };
+  // high: on a desktop, set well up the screen, clear of a subject that sits in the middle; low: under it, smaller.
+  prompt?: { title: string; detail?: string; high?: boolean; low?: boolean };
   // Anything of the day's own to show over the scene, as ordinary page content.
   Overlay?: ComponentType;
   Scene: ComponentType;

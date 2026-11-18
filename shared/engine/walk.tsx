@@ -43,7 +43,7 @@ const LEAP = Math.sqrt(2 * GRAVITY * 3.75);
 const WALK_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight", "Space"]);
 
 // Moves `current` toward `target` on a critically damped spring taking about `time` seconds, carrying `velocity`.
-function damp(current: THREE.Vector3, target: THREE.Vector3, velocity: THREE.Vector3, time: number, delta: number) {
+export function damp(current: THREE.Vector3, target: THREE.Vector3, velocity: THREE.Vector3, time: number, delta: number) {
   const omega = 2 / time;
   const x = omega * delta;
   const fade = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);

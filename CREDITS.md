@@ -121,6 +121,14 @@ The rocks, reef and sand on the floor of Kelp are scans from [Poly Haven](https:
 | [Coast Sand Rocks 02](https://polyhaven.com/a/coast_sand_rocks_02) | Rob Tuytel |
 | [Low Tide Rocks](https://polyhaven.com/a/low_tide_rocks) | Dimitrios Savva |
 
+## Pendulum
+
+The worn concrete under the studio floor's paint in Pendulum is a scan from [Poly Haven](https://polyhaven.com), CC0, so no credit is required, but it is due.
+
+| Asset | By |
+| --- | --- |
+| [Concrete Floor Worn 001](https://polyhaven.com/a/concrete_floor_worn_001) | Dimitrios Savva and Rico Cilliers |
+
 ## Meshy
 
 The rabbits and the leaves among the vines in Labyrinth are [Meshy](https://www.meshy.ai) models made for it, cut right down for the scene.

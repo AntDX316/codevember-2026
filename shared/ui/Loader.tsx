@@ -19,7 +19,8 @@ const STEPS: Record<LoadStep, { to: number; seconds: number; label: string }> = 
   done: { to: 1, seconds: 0.3, label: "Ready" }
 };
 
-export function Loader({ day, step }: { day: CodevemberDay; step: LoadStep }) {
+// For a day, its number and word; without one, the calendar of them all.
+export function Loader({ day, step }: { day?: CodevemberDay; step: LoadStep }) {
   const [armed, setArmed] = useState(false);
 
   // One frame at zero first, otherwise the opening step has nothing to transition from.
@@ -40,10 +41,10 @@ export function Loader({ day, step }: { day: CodevemberDay; step: LoadStep }) {
       </header>
       <motion.div variants={inTurn(0.08)} initial="hidden" animate="show">
         <motion.p className="cv-title-day" variants={rise}>
-          Day {String(day.day).padStart(2, "0")}
+          {day ? `Day ${String(day.day).padStart(2, "0")}` : "November 2026"}
         </motion.p>
         <motion.p className="cv-loader-word" variants={riseBig}>
-          {day.word}
+          {day ? day.word : "Codevember"}
         </motion.p>
       </motion.div>
       <div className="cv-loader-track" role="progressbar" aria-label={label}>
