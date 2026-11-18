@@ -207,8 +207,9 @@ export function Rafts({ fine, active }: { fine: number; active: boolean }) {
       const at = new Float32Array(mine.length * 4);
       mine.forEach((c, i) => at.set([c.x, c.z, c.size, c.turn], i * 4));
       geometry.setAttribute("aAt", new THREE.InstancedBufferAttribute(at, 4));
+      // Rewritten whole every frame and sent once: left at the usual usage, as three's WebGPU backend sends an attribute
+      // marked dynamic again for every pass it is drawn in, whether or not it has changed since.
       const push = new THREE.InstancedBufferAttribute(new Float32Array(mine.length * 3), 3);
-      push.setUsage(THREE.DynamicDrawUsage);
       geometry.setAttribute("aPush", push);
       geometry.instanceCount = mine.length;
 

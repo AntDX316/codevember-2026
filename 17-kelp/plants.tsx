@@ -77,9 +77,10 @@ function build(forest: Forest, fine: number, near: boolean) {
   const tube = new THREE.InstancedBufferGeometry();
   tube.setAttribute("position", new THREE.Float32BufferAttribute(tubePoints, 3));
   tube.setIndex(tubeIndex);
+  // Rewritten whole every frame and sent once: left at the usual usage, as three's WebGPU backend sends an attribute
+  // marked dynamic again for every pass it is drawn in, whether or not it has changed since.
   const ends = ["aP0", "aP1", "aP2", "aP3"].map((name) => {
     const a = new THREE.InstancedBufferAttribute(new Float32Array(segments * 4), 4);
-    a.setUsage(THREE.DynamicDrawUsage);
     tube.setAttribute(name, a);
     return a;
   });
@@ -122,9 +123,10 @@ function build(forest: Forest, fine: number, near: boolean) {
   const leaf = new THREE.InstancedBufferGeometry();
   leaf.setAttribute("position", new THREE.Float32BufferAttribute(leafPoints, 3));
   leaf.setIndex(leafIndex);
+  // Rewritten whole every frame and sent once: left at the usual usage, as three's WebGPU backend sends an attribute
+  // marked dynamic again for every pass it is drawn in, whether or not it has changed since.
   const make = (name: string, geometry: THREE.InstancedBufferGeometry) => {
     const a = new THREE.InstancedBufferAttribute(new Float32Array(sites.length * 4), 4);
-    a.setUsage(THREE.DynamicDrawUsage);
     geometry.setAttribute(name, a);
     return a;
   };

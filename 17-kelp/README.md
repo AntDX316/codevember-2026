@@ -25,6 +25,7 @@ Run it locally with `npm run dev` from the repo root, then open <http://localhos
 - Swell sways the water less with depth over a steady current; pointer sweeps push the water and taps send surges.
 - Caustics are traced up to the moving surface toward the sun, and soft light shafts swing round with the sun dial.
 - The sky shows through Snell's window, bent by each wave's slope; outside it the surface mirrors the lit water below.
+- Water darkens away from the sun; plankton at the lens blur into bokeh, and marine snow rises glinting through the shafts.
 
 ### Life
 

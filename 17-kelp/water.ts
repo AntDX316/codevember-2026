@@ -149,11 +149,13 @@ export function ease(k: number) {
 export const SWELL = new THREE.Vector2(1, 0.35).normalize();
 
 // How the water moves at a point: the steady current, the to and fro of the swell passing overhead (each bit of water
-// swings round an ellipse that shrinks with depth), and small eddies.
-export function flow(x: number, y: number, z: number, t: number, out: Float32Array | number[], at = 0) {
+// swings round an ellipse that shrinks with depth), and small eddies. lag and pace: for one plant, how far behind the
+// swell it rides and how much faster or slower it swings, so plants a few metres apart never sway in step.
+export function flow(x: number, y: number, z: number, t: number, out: Float32Array | number[], at = 0, lag = 0, pace = 1) {
   const w = (Math.PI * 2) / motion.period;
   const k = (w * w) / 9.81;
-  const phase = k * (SWELL.x * x + SWELL.y * z) * SHORTER - motion.phase;
+  const phase = k * (SWELL.x * x + SWELL.y * z) * SHORTER - motion.phase * pace + lag;
+  t = t * pace + lag * 3;
   const decay = Math.exp(-k * Math.max(0, SURFACE - y));
   const swell = motion.swell * motion.calm * w * decay;
   const along = swell * Math.cos(phase);
@@ -202,12 +204,17 @@ export const caustics = Fn(([P, N]: [any, any]) => {
 });
 
 // The water itself in a direction: bright toward the surface, deep below, and the glow of the sun.
+// The water is lit from the sun's side: looking away from it, it falls off into a deep, dark blue, so the light reads as
+// pouring in from one side and the far water gives everything depth.
+const sunward = (d: any) => mix(float(0.42), float(1), smoothstep(-0.35, 0.85, d.dot(sea.toSun))) as any;
+
 export const environment = Fn(([direction]: [any]) => {
   const d = normalize(direction) as any;
   const up = d.y as any;
   let rgb: any = mix(sea.deep, sea.shallow, smoothstep(-0.55, 0.9, up));
   // The bright disc of sky overhead (Snell's window), soft-edged by the waves.
   rgb = rgb.add(sea.shallow.mul(smoothstep(0.6, 0.8, up).mul(0.9)));
+  rgb = rgb.mul(sunward(d));
   const toward = max(d.dot(sea.toSun), 0) as any;
   rgb = rgb.add(sea.sun.mul(pow(toward, 5).mul(0.22).add(pow(toward, 48).mul(0.7)).mul(sea.power).mul(0.35)));
   return rgb;
@@ -218,7 +225,7 @@ export const haze = Fn(([direction]: [any]) => {
   const d = normalize(direction) as any;
   const up = d.y as any;
   let rgb: any = mix(sea.deep, sea.shallow, smoothstep(-0.55, 0.9, up));
-  rgb = rgb.add(sea.shallow.mul(smoothstep(0.6, 0.8, up).mul(0.9)));
+  rgb = rgb.add(sea.shallow.mul(smoothstep(0.6, 0.8, up).mul(0.9))).mul(sunward(d));
   const toward = max(d.dot(sea.toSun), 0) as any;
   return rgb.add(sea.sun.mul(pow(toward, 5).mul(0.22).add(pow(toward, 48).mul(0.7)).mul(sea.power).mul(0.35)));
 });
@@ -232,7 +239,8 @@ export const underwater = Fn(([rgb, P]: [any, any]) => {
   const toP = (P as any).sub(cameraPosition) as any;
   const d = length(toP) as any;
   const down = through(max(float(SURFACE).sub(P.y), 0).mul(0.55)) as any;
-  const kept = through(d) as any;
+  // Thicker along the eye's line than the light's way down, so what stands a little off sinks into the water.
+  const kept = through(d.mul(1.6)) as any;
   return (rgb as any).mul(down).mul(kept).add(haze(toP).mul(vec3(1, 1, 1).sub(kept)));
 });
 

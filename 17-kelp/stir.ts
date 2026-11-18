@@ -21,8 +21,8 @@ const toP = new THREE.Vector3();
 
 // The water's speed at a point: the swell, current and eddies, plus whatever the stirrings add, capped so that however
 // hard the stirring, the water it moves goes no faster than a strong surge.
-export function waterAt(x: number, y: number, z: number, t: number, out: Float32Array, cap = 0.9) {
-  flow(x, y, z, t, out);
+export function waterAt(x: number, y: number, z: number, t: number, out: Float32Array, cap = 0.9, lag = 0, pace = 1) {
+  flow(x, y, z, t, out, 0, lag, pace);
   let sx = 0;
   let sy = 0;
   let sz = 0;

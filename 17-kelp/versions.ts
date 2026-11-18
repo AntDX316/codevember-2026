@@ -63,7 +63,7 @@ export const LOOKS: Record<Version, Look> = {
     caustics: 1.1,
     cell: 1.7,
     flicker: 1,
-    shafts: 1,
+    shafts: 1.5,
     swell: 0.55,
     period: 9,
     current: [0.05, 0.02],

@@ -179,10 +179,9 @@ export function Crabs({ active }: { active: boolean }) {
     shadowMaterial.opacityNode = smoothstep(1, 0.2, vec2(p.x, p.z).length()).mul(0.42) as any;
     shadows.renderOrder = 1;
     const meshes = [shadows, shells, bones, knobs, tips, palms, eyes];
-    for (const m of meshes) {
-      m.frustumCulled = false;
-      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    }
+    // Rewritten whole every frame and sent once: left at the usual usage, as three's WebGPU backend sends an attribute
+    // marked dynamic again for every pass it is drawn in, whether or not it has changed since.
+    for (const m of meshes) m.frustumCulled = false;
     return { meshes, bones, knobs, tips, palms, eyes, shells, shadows, geometries: [tube, cone, knob, ball, disc, back], materials: [shellMaterial, limbMaterial, tipMaterial, palmMaterial, eyeMaterial, shadowMaterial] };
   }, [count]);
   useDispose(...parts.geometries, ...parts.materials);

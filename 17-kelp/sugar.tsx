@@ -41,9 +41,10 @@ export function Ribbons({ chains, blades, colour, fine, active }: { chains: Chai
     const geometry = new THREE.InstancedBufferGeometry();
     geometry.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
     geometry.setIndex(index);
+    // Rewritten whole every frame and sent once: left at the usual usage, as three's WebGPU backend sends an attribute
+    // marked dynamic again for every pass it is drawn in, whether or not it has changed since.
     const ends = ["aP0", "aP1", "aP2", "aP3"].map((name) => {
       const a = new THREE.InstancedBufferAttribute(new Float32Array(segments * 4), 4);
-      a.setUsage(THREE.DynamicDrawUsage);
       geometry.setAttribute(name, a);
       return a;
     });

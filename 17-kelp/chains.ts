@@ -18,6 +18,9 @@ export type ChainSpec = { root: THREE.Vector3; length: number; lift: number; lea
 // A point held by the pointer: which chain and node, and where it is being pulled to.
 export type Hold = { chain: number; node: number; target: THREE.Vector3 };
 
+// How fast any point of a plant may move through the water, m/s: a little over the swell's own top speed.
+const MOST_SPEED = 0.55;
+
 export class Chains {
   specs: ChainSpec[];
   nodes: number;
@@ -42,10 +45,27 @@ export class Chains {
   // The water round each point, sampled every other step: it changes over seconds, so half as often never shows.
   private sampled: Float32Array;
   private ticks = 0;
+  private lag: Float32Array;
+  private pace: Float32Array;
 
   constructor(specs: ChainSpec[], nodes: number, options: { ceiling?: number; ground: (x: number, z: number) => number; drag?: [number, number]; settle?: number; rate?: number }) {
     this.specs = specs;
     this.nodes = nodes;
+    // Each plant its own lag behind the swell and pace through it; a branch rides with the plant it grows from.
+    this.lag = new Float32Array(specs.length);
+    this.pace = new Float32Array(specs.length);
+    specs.forEach((spec, i) => {
+      if (spec.parent !== undefined) {
+        const from = Math.floor(spec.parent / nodes);
+        this.lag[i] = this.lag[from];
+        this.pace[i] = this.pace[from];
+        return;
+      }
+      const h = Math.sin(spec.root.x * 12.9898 + spec.root.z * 78.233) * 43758.5453;
+      const r = h - Math.floor(h);
+      this.lag[i] = r * Math.PI * 2;
+      this.pace[i] = 0.85 + ((r * 7.31) % 1) * 0.3;
+    });
     this.ceiling = options.ceiling ?? SURFACE - 0.04;
     this.ground = options.ground;
     this.drag = options.drag ?? [1.6, 3];
@@ -118,7 +138,7 @@ export class Chains {
         const y = p[o + 1];
         const z = p[o + 2];
         if (fresh) {
-          waterAt(x, y, z, t, water);
+          waterAt(x, y, z, t, water, 0.9, this.lag[i], this.pace[i]);
           sampled[o] = water[0];
           sampled[o + 1] = water[1];
           sampled[o + 2] = water[2];
@@ -127,9 +147,17 @@ export class Chains {
           water[1] = sampled[o + 1];
           water[2] = sampled[o + 2];
         }
-        const vx = (x - q[o]) / dt;
-        const vy = (y - q[o + 1]) / dt;
-        const vz = (z - q[o + 2]) / dt;
+        let vx = (x - q[o]) / dt;
+        let vy = (y - q[o + 1]) / dt;
+        let vz = (z - q[o + 2]) / dt;
+        // Never faster than a strong swell carries it, unless held: a plant may swing far but never whip.
+        const fast = Math.hypot(vx, vy, vz);
+        if (fast > MOST_SPEED && this.hold?.chain !== i) {
+          const k = MOST_SPEED / fast;
+          vx *= k;
+          vy *= k;
+          vz *= k;
+        }
         this.stream[o] += (water[0] - vx - this.stream[o]) * smooth;
         this.stream[o + 1] += (water[1] - vy - this.stream[o + 1]) * smooth;
         this.stream[o + 2] += (water[2] - vz - this.stream[o + 2]) * smooth;

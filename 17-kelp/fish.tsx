@@ -522,12 +522,11 @@ export function Fishes({ schools, active, seed }: { schools: School[]; active: b
         const geometry = new THREE.InstancedBufferGeometry();
         for (const name of ["position", "normal", "aFin"]) geometry.setAttribute(name, shape.getAttribute(name));
         geometry.setIndex(shape.getIndex());
+        // Rewritten whole every frame and sent once: left at the usual usage, as three's WebGPU backend sends an attribute
+        // marked dynamic again for every pass it is drawn in, whether or not it has changed since.
         const at = new THREE.InstancedBufferAttribute(new Float32Array(school.count * 4), 4);
         const facing = new THREE.InstancedBufferAttribute(new Float32Array(school.count * 4), 4);
         const swim = new THREE.InstancedBufferAttribute(new Float32Array(school.count * 4), 4);
-        at.setUsage(THREE.DynamicDrawUsage);
-        facing.setUsage(THREE.DynamicDrawUsage);
-        swim.setUsage(THREE.DynamicDrawUsage);
         geometry.setAttribute("aAt", at);
         geometry.setAttribute("aFacing", facing);
         geometry.setAttribute("aSwim", swim);
