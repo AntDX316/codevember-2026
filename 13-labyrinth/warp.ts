@@ -170,6 +170,8 @@ export function bend(material: THREE.NodeMaterial) {
   bending.add(material);
   (material as any).setupModelViewProjection = () => cameraProjectionMatrix.mul(cameraViewMatrix).mul(vec4(bent(modelWorldMatrix.mul(positionLocal).xyz, warp.viewer), 1));
 }
+// Whether a material is drawn through the bend, for a copy made of it (styles.ts) to be drawn through it as well.
+export const bends = (material: THREE.NodeMaterial) => bending.has(material);
 
 // Motion bent too, worked out at the corners, so that the temporal filter follows what is drawn.
 const motion = velocity as any;
@@ -181,6 +183,19 @@ if (!motion.__bent) {
     const now = varying(this.currentProjectionMatrix.mul(cameraViewMatrix).mul(vec4(bent(positionWorld, warp.viewer), 1)), "vNow") as any;
     const then = varying(this.previousProjectionMatrix.mul(this.previousCameraViewMatrix).mul(vec4(bent(positionWorld, warp.before), 1)), "vThen") as any;
     return now.xy.div(now.w).sub(then.xy.div(then.w));
+  };
+}
+
+// And so a bent material has no use for last frame's instance matrices, which three keeps for the motion vectors of
+// instanced meshes: a full copy of each batch's matrices, written and sent to the GPU whole every frame however few
+// hedges are placed (megabytes a frame for the batches of arches). Bent materials are told the frame has no motion
+// vectors to keep history for, and keep none.
+const builder = THREE.NodeBuilder.prototype as any;
+if (!builder.__bent) {
+  builder.__bent = true;
+  const needs = builder.needsPreviousData;
+  builder.needsPreviousData = function (this: any) {
+    return bending.has(this.material) ? false : needs.call(this);
   };
 }
 

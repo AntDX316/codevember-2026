@@ -321,8 +321,33 @@ function Control({ name, setting, store }: { name: string; setting: Setting; sto
   );
 }
 
+// A pause icon: two white bars.
+const PAUSE_ICON = (
+  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+    <rect x="6" y="5" width="4" height="14" rx="1.2" fill="currentColor" />
+    <rect x="14" y="5" width="4" height="14" rx="1.2" fill="currentColor" />
+  </svg>
+);
+
 function PhonePill({ name, setting, store }: { name: string; setting: Setting; store: SettingsStore }) {
   const value = useSyncExternalStore(store.subscribe, () => store.get(name));
+  const showWhile = setting.type === "toggle" ? setting.showWhile : undefined;
+  const allowed = useSyncExternalStore(store.subscribe, () => (showWhile ? store.get(showWhile) !== false : true));
+  if (setting.type === "toggle" && setting.icon) {
+    const gone = (value as boolean) || !allowed;
+    return (
+      <button
+        type="button"
+        className={`cv-pill cv-pill-icon ${gone ? "cv-pill-gone" : ""}`}
+        aria-label={setting.label}
+        aria-hidden={gone}
+        tabIndex={gone ? -1 : 0}
+        onClick={() => store.set(name, true)}
+      >
+        {PAUSE_ICON}
+      </button>
+    );
+  }
   if (setting.type === "action") {
     return (
       <button type="button" className="cv-pill" onClick={() => store.trigger(name)}>
@@ -386,6 +411,71 @@ function PhonePill({ name, setting, store }: { name: string; setting: Setting; s
   );
 }
 
+// Whether a setting is shown, by its `when`.
+function useShown(setting: Setting, store: SettingsStore) {
+  const chosen = useSyncExternalStore(store.subscribe, () => (setting.when ? store.get(setting.when.setting) : null), () => null);
+  return !setting.when || ("is" in setting.when ? chosen === setting.when.is : chosen !== setting.when.not);
+}
+
+function DockRow({ name, setting, store }: { name: string; setting: Setting; store: SettingsStore }) {
+  const value = useSyncExternalStore(store.subscribe, () => store.get(name));
+  if (!useShown(setting, store)) return null;
+  if (setting.type === "choice")
+    return (
+      <div className="cv-dock-row cv-dock-choices" role="radiogroup" aria-label={setting.label}>
+        {setting.options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={value === option.value}
+            className={`cv-dock-chip ${value === option.value ? "cv-dock-chip-on" : ""}`}
+            onClick={() => store.set(name, option.value)}
+          >
+            {option.short ?? option.label}
+          </button>
+        ))}
+      </div>
+    );
+  return (
+    <div className="cv-dock-row">
+      <Control name={name} setting={{ ...setting, label: setting.short ?? setting.label } as Setting} store={store} />
+    </div>
+  );
+}
+
+// A phone's dock: the day's main settings along the bottom, sliders that sit next to each other paired in a row.
+function PhoneDock({ names, pills, store, hidden }: { names: string[]; pills?: string[]; store: SettingsStore; hidden: boolean }) {
+  const groups: string[][] = [];
+  for (const name of names) {
+    const setting = store.schema[name];
+    if (!setting) continue;
+    const last = groups[groups.length - 1];
+    if (setting.type === "range" && last && store.schema[last[0]].type === "range") last.push(name);
+    else groups.push([name]);
+  }
+  return (
+    <div className={`cv-dock ${hidden ? "cv-dock-hidden" : ""}`}>
+      {pills ? (
+        <div className="cv-dock-pills">
+          {pills.map((name) => (store.schema[name] ? <PhonePill key={name} name={name} setting={store.schema[name]} store={store} /> : null))}
+        </div>
+      ) : null}
+      {groups.map((group) =>
+        group.length > 1 ? (
+          <div className="cv-dock-pair" key={group.join()}>
+            {group.map((name) => (
+              <DockRow key={name} name={name} setting={store.schema[name]} store={store} />
+            ))}
+          </div>
+        ) : (
+          <DockRow key={group[0]} name={group[0]} setting={store.schema[group[0]]} store={store} />
+        )
+      )}
+    </div>
+  );
+}
+
 const CHOICES: { value: QualityChoice; label: string }[] = [
   { value: "auto", label: "Auto" },
   { value: "high", label: "High" },
@@ -402,6 +492,8 @@ type HudProps = {
   Overlay?: ComponentType;
   settings: SettingsStore | null;
   phonePills?: string[];
+  phoneDock?: string[];
+  phoneDockPills?: string[];
   tier: QualityTier;
   choice: QualityChoice;
   onChoice: (choice: QualityChoice) => void;
@@ -411,6 +503,8 @@ type HudProps = {
 
 function ControlRow({ name, setting, store }: { name: string; setting: Setting; store: SettingsStore }) {
   const chosen = useSyncExternalStore(store.subscribe, () => (setting.when ? store.get(setting.when.setting) : null), () => null);
+  // An icon setting is its own button, beside the panel or on the dock, not a row in it.
+  if (setting.hidden || (setting.type === "toggle" && setting.icon)) return null;
   if (setting.when && ("is" in setting.when ? chosen !== setting.when.is : chosen === setting.when.not)) return null;
   return (
     <motion.div className="cv-panel-row" variants={rise}>
@@ -419,7 +513,7 @@ function ControlRow({ name, setting, store }: { name: string; setting: Setting; 
   );
 }
 
-export function Hud({ day, hint, prompt, notes, overview, Overlay, settings, phonePills, tier, choice, onChoice, isWebGPU, fpsRef }: HudProps) {
+export function Hud({ day, hint, prompt, notes, overview, Overlay, settings, phonePills, phoneDock, phoneDockPills, tier, choice, onChoice, isWebGPU, fpsRef }: HudProps) {
   const router = useRouter();
   const [panelOpen, setPanelOpen] = useState(false);
   const [hidden, setHidden] = useState(false);
@@ -534,6 +628,16 @@ export function Hud({ day, hint, prompt, notes, overview, Overlay, settings, pho
           {phonePills.map((name) => (settings.schema[name] ? <PhonePill key={name} name={name} setting={settings.schema[name]} store={settings} /> : null))}
         </div>
       ) : null}
+
+      {settings ? (
+        <div className="cv-desk-icons" key={`icons-${day.day}`}>
+          {Object.entries(settings.schema).map(([name, setting]) =>
+            setting.type === "toggle" && setting.icon ? <PhonePill key={name} name={name} setting={setting} store={settings} /> : null
+          )}
+        </div>
+      ) : null}
+
+      {settings && phoneDock ? <PhoneDock key={`dock-${day.day}`} names={phoneDock} pills={phoneDockPills} store={settings} hidden={panelOpen} /> : null}
 
       <aside id="cv-panel" className={`cv-panel ${panelOpen ? "cv-panel-open" : ""}`}>
         <button

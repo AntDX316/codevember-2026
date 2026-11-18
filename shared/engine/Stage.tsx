@@ -13,7 +13,7 @@ import { Post } from "./Post";
 import { Extents } from "./extents";
 import { Hover } from "./hover";
 import { withRetries } from "./retry";
-import { AdaptiveQuality, initialTier, topDpr, QualityProvider, scenePhase, type QualityChoice } from "./quality";
+import { AdaptiveQuality, initialTier, topDpr, QualityProvider, scenePhase, useQuality, type QualityChoice } from "./quality";
 import { SettingsProvider, useCreateSettings } from "./settings";
 import { DEFAULT_LOOK, type DayDefinition, type Look, type QualityTier, type RenderPhase } from "./types";
 
@@ -115,6 +115,30 @@ function SceneWarmup({ phase, onCompiling, onReady, judge }: { phase: RefObject<
   const camera = useThree((state) => state.camera);
   const run = useRef({ frames: 0, smooth: 0, gpuDone: false, gpuDoneAt: 0, finished: false, warmAt: 0, probeAt: 0, probeFrames: 0, steps: 0 });
   const unhidden = useRef<THREE.Object3D[]>([]);
+  const { tier } = useQuality();
+  const tierAtStart = useRef(tier);
+
+  // A tier changed after the warm-up (Auto stepping down, or one picked by hand) rebuilds materials made for the tier.
+  // Those showing compile as they are next drawn, but hidden ones would wait for the moment they appear: compile them
+  // all now, in the background, as the warm-up did at first.
+  useEffect(() => {
+    if (tier === tierAtStart.current) return;
+    tierAtStart.current = tier;
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        const hidden: THREE.Object3D[] = [];
+        scene.traverse((object) => {
+          if (object.visible) return;
+          object.visible = true;
+          hidden.push(object);
+        });
+        // The objects are gathered as the compile starts, so they can be hidden again at once.
+        gl.compileAsync(scene, camera).catch(() => undefined);
+        for (const object of hidden) object.visible = false;
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [tier, gl, scene, camera]);
   const compiling = useRef({ pending: 0, lastNewAt: 0, release: () => {} });
 
   useEffect(() => {

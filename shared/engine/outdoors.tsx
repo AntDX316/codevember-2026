@@ -142,6 +142,11 @@ export function Birds({
     return { position, velocity, clock: 0 };
   }, [count, centre, spread, groupSize]);
 
+  // The birds' colour is read by the shader, not built into it, so a day changing it (moonlight, a new sky) does not
+  // rebuild the flock and compile its shader again.
+  const tint = useMemo(() => uniform(new THREE.Color(color)), []);
+  tint.value.set(color);
+
   const mesh = useMemo(() => {
     // Swept wings out along X, a body and a tail, with the beak along -Z.
     const geometry = new THREE.BufferGeometry();
@@ -160,14 +165,14 @@ export function Birds({
     geometry.setAttribute("aPhase", new THREE.InstancedBufferAttribute(phases, 1));
 
     const material = new THREE.MeshBasicNodeMaterial({ side: THREE.DoubleSide });
-    material.colorNode = tslColor(color);
+    material.colorNode = tint;
     const flap = sin(time.mul(11).add(attribute("aPhase", "float"))).mul(abs(positionGeometry.x)).mul(0.55) as any;
     material.positionNode = positionLocal.add(vec3(0, flap.mul(size), 0));
 
     const instanced = new THREE.InstancedMesh(geometry, material, count);
     instanced.frustumCulled = false;
     return instanced;
-  }, [count, color, size]);
+  }, [count, tint, size]);
 
   useEffect(
     () => () => {

@@ -295,8 +295,9 @@ function batch(geometry: THREE.BufferGeometry, material: THREE.Material, limit: 
 function resize(part: Batch, capacity: number) {
   const matrix = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 16), 16);
   const rest = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
-  matrix.setUsage(THREE.DynamicDrawUsage);
-  rest.setUsage(THREE.DynamicDrawUsage);
+  // Rewritten every frame, but only as far as the hedges placed: left at the usual usage, so that three uploads just the
+  // range marked after placing. Marked dynamic, WebGPU's backend would send the whole buffer again for every pass drawn,
+  // megabytes a frame for the arches alone, which are mostly empty.
   const kept = Math.min(part.count, capacity);
   const oldMatrix = part.mesh.instanceMatrix;
   const oldRest = part.rest;
@@ -590,7 +591,10 @@ function Hedges({ air, size, reach, beds }: { air: Air; size: number; reach: num
     }
     for (const part of [near, far, posts, farPosts, archWalls, archPosts]) {
       settle(part);
+      // A batch empty now and last frame has nothing new to send, so its buffers are left alone and not uploaded at all.
+      const idle = part.count === 0 && part.mesh.count === 0;
       part.mesh.count = part.count;
+      if (idle) continue;
       part.mesh.instanceMatrix.clearUpdateRanges();
       part.mesh.instanceMatrix.addUpdateRange(0, part.count * 16);
       part.mesh.instanceMatrix.needsUpdate = true;

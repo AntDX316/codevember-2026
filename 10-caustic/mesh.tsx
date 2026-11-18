@@ -5,7 +5,7 @@ import { useEffect, useMemo } from "react";
 import * as THREE from "three/webgpu";
 import { dot, float, length, max, mix, modelWorldMatrix, normalize, normalLocal, positionWorld, sign, refract, step, texture, uniform, vec2, vec4 } from "three/tsl";
 import { useQuality } from "../shared/engine/quality";
-import { lightIsStill, sun, through } from "./light";
+import { lightIsStill, stir, sun, through } from "./light";
 import suzanneData from "./suzanne.json";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- TSL's node types do not model every operator. */
@@ -83,10 +83,13 @@ const SIZE_LOW = 512;
 const VIEW = 3.4;
 const DEPTH = 8;
 
-export function useSunView(meshes: { current: (THREE.Mesh | null)[] }, count: number) {
+// `running` is whether the light that reads these maps is being traced: when it is not, they are left as they are.
+export function useSunView(meshes: { current: (THREE.Mesh | null)[] }, count: number, running = true) {
   const size = useQuality().tier === "low" ? SIZE_LOW : SIZE;
+  // Made once, whatever the tier: the light's shaders read these maps, so new ones would mean building them all again.
+  // A change of tier only resizes them, below.
   const view = useMemo(() => {
-    const target = () => new THREE.RenderTarget(size, size, { type: THREE.HalfFloatType });
+    const target = () => new THREE.RenderTarget(SIZE, SIZE, { type: THREE.HalfFloatType });
     const front = target();
     const back = target();
     const camera = new THREE.OrthographicCamera(-VIEW / 2, VIEW / 2, VIEW / 2, -VIEW / 2, 0.5, 30);
@@ -113,7 +116,12 @@ export function useSunView(meshes: { current: (THREE.Mesh | null)[] }, count: nu
       return pair;
     });
     return { front, back, camera, projection, near, far, scenes, proxies, clear: new THREE.Color() as THREE.Color & { a: number } };
-  }, [count, size]);
+  }, [count]);
+  useEffect(() => {
+    view.front.setSize(size, size);
+    view.back.setSize(size, size);
+    stir();
+  }, [view, size]);
 
   useEffect(
     () => () => {
@@ -127,7 +135,8 @@ export function useSunView(meshes: { current: (THREE.Mesh | null)[] }, count: nu
 
   useFrame(({ gl }) => {
     // The glass seen from the sun only changes when something has moved.
-    if (lightIsStill()) return;
+    // A study without Suzannes never reads the maps, so they are never drawn, nor made on the GPU.
+    if (!running || count === 0 || lightIsStill()) return;
     const renderer = gl as unknown as THREE.WebGPURenderer;
     const { camera } = view;
     camera.position.set(0, 0.15, 0).addScaledVector(sun.dir.value, 12);

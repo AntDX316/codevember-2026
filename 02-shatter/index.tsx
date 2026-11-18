@@ -2,7 +2,7 @@
 
 import { useFrame, useThree } from "@react-three/fiber";
 import { CuboidCollider, Physics, useRapier } from "@react-three/rapier";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three/webgpu";
 import {
   Fn,
@@ -69,7 +69,16 @@ const SKIES: Record<string, SkyPalette & { env: string; light: string }> = {
 };
 
 const STATE_ROWS = 5;
+// The piece size slider moves in steps, and every sky it can reach is cut while the page loads.
+const PIECES = { min: 0.55, max: 2, step: 0.05 };
+const PIECE_STEPS = Math.round((PIECES.max - PIECES.min) / PIECES.step);
+const pieceSize = (step: number) => PIECES.min + step * PIECES.step;
+// A break-all brings hundreds of plates down within a few seconds. Each frame lets only this many go, so no single
+// frame builds a crowd of colliders; the rest wait a frame or two, too short to see.
+const RELEASES_PER_FRAME = 6;
 const REST_ROTATION = [0, 0, 0, 1];
+const HOLES_WIDTH = 256;
+const HOLES_HEIGHT = 128;
 const INTACT_SCALE = 1.003;
 const CEILING = 46;
 
@@ -128,19 +137,35 @@ function Sky({ palette, broken }: { palette: SkyPalette; broken: { current: numb
   const impact = useSettingRef<number>("impact");
   const gravity = useSettingRef<number>("gravity");
 
-  // Slider moves are held back a moment, because each new size cuts a whole new sky.
-  const pieceSize = useSetting<number>("pieces");
-  const [settledSize, setSettledSize] = useState(pieceSize);
+  // Slider moves are held back a moment, because each new size throws away every piece of the old sky.
+  const pieces = useSetting<number>("pieces");
+  const [settledSize, setSettledSize] = useState(pieces);
   useEffect(() => {
-    const timer = window.setTimeout(() => setSettledSize(pieceSize), 260);
+    const timer = window.setTimeout(() => setSettledSize(pieces), 260);
     return () => window.clearTimeout(timer);
-  }, [pieceSize]);
+  }, [pieces]);
   // Fixed by the quality the scene opened on. Cutting a new sky throws away every piece, so a quality change must never do it.
   const [firstTier] = useState(tier);
   const baseCount = firstTier === "high" ? 300 : firstTier === "medium" ? 220 : 130;
-  const plateCount = Math.round(Math.min(baseCount * 2.2, baseCount / (settledSize * settledSize)));
-  const dome = useMemo(() => buildDome(plateCount), [plateCount]);
+  const plateCount = (size: number) => Math.round(Math.min(baseCount * 2.2, baseCount / (size * size)));
+  // Every sky the slider can reach, with its map of holes, cut behind the loader: cutting one takes up to half a
+  // second, far too long for a slider. A size change then only swaps which one is drawn.
+  const skies = useMemo(() => {
+    const cut = new Map<number, ReturnType<typeof buildDome> & ReturnType<typeof buildCellMap>>();
+    for (let step = 0; step <= PIECE_STEPS; step++) {
+      const plates = plateCount(pieceSize(step));
+      if (cut.has(plates)) continue;
+      const dome = buildDome(plates);
+      cut.set(plates, { ...dome, ...buildCellMap(dome.shards, HOLES_WIDTH, HOLES_HEIGHT) });
+    }
+    return cut;
+  }, [baseCount]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A size saved before the slider had steps lands on the nearest one.
+  const step = THREE.MathUtils.clamp(Math.round((settledSize - PIECES.min) / PIECES.step), 0, PIECE_STEPS);
+  const dome = skies.get(plateCount(pieceSize(step)))!;
   const count = dome.shards.length;
+  // The live state is laid out for the largest sky, so one texture and one set of materials serve them all.
+  const capacity = useMemo(() => Math.max(...[...skies.values()].map((sky) => sky.shards.length)), [skies]);
 
   const sky = useMemo(() => createSky(), []);
   const auroraUniform = useMemo(() => uniform(1), []);
@@ -148,32 +173,23 @@ function Sky({ palette, broken }: { palette: SkyPalette; broken: { current: numb
   useEffect(() => sky.setPalette(palette), [sky, palette]);
 
   // Live plate transforms: position + scale, rotation, then last frame's two for motion vectors, then fall.
+  // Each row is as wide as the largest sky; a smaller one leaves the end of every row unused.
   const state = useMemo(() => {
-    const data = new Float32Array(count * STATE_ROWS * 4);
-    for (let i = 0; i < count; i++) {
-      const home = dome.shards[i].home;
-      for (const row of [0, 2]) data.set([home.x, home.y, home.z, INTACT_SCALE], (row * count + i) * 4);
-      for (const row of [1, 3]) data.set(REST_ROTATION, (row * count + i) * 4);
-    }
-    const tex = new THREE.DataTexture(data, count, STATE_ROWS, THREE.RGBAFormat, THREE.FloatType);
+    const data = new Float32Array(capacity * STATE_ROWS * 4);
+    const tex = new THREE.DataTexture(data, capacity, STATE_ROWS, THREE.RGBAFormat, THREE.FloatType);
     tex.minFilter = tex.magFilter = THREE.NearestFilter;
-    tex.needsUpdate = true;
     return { data, tex };
-  }, [count, dome]);
+  }, [capacity]);
 
   // A latitude-longitude map of the holes, which is all the lake needs to reflect them.
   const holes = useMemo(() => {
-    const width = 256;
-    const height = 128;
-    const cells = buildCellMap(dome.shards, width, height);
-    const data = new Uint8Array(width * height * 4).fill(0);
+    const data = new Uint8Array(HOLES_WIDTH * HOLES_HEIGHT * 4).fill(0);
     for (let i = 3; i < data.length; i += 4) data[i] = 255;
-    const tex = new THREE.DataTexture(data, width, height, THREE.RGBAFormat, THREE.UnsignedByteType);
+    const tex = new THREE.DataTexture(data, HOLES_WIDTH, HOLES_HEIGHT, THREE.RGBAFormat, THREE.UnsignedByteType);
     tex.magFilter = tex.minFilter = THREE.LinearFilter;
     tex.wrapS = THREE.RepeatWrapping;
-    tex.needsUpdate = true;
-    return { data, tex, cells, width, height };
-  }, [dome]);
+    return { data, tex };
+  }, []);
 
   const mirrorScale = tier === "high" ? 1 : tier === "medium" ? 0.75 : 0;
   const materials = useMemo(() => {
@@ -265,13 +281,30 @@ function Sky({ palette, broken }: { palette: SkyPalette; broken: { current: numb
     () => () => {
       state.tex.dispose();
       holes.tex.dispose();
-      dome.geometry.dispose();
     },
-    [state, holes, dome]
+    [state, holes]
+  );
+  useEffect(
+    () => () => {
+      for (const sky of skies.values()) sky.geometry.dispose();
+    },
+    [skies]
   );
 
+  // A new sky starts whole: every plate at home, every hole closed. Done as the new sky is committed, before any
+  // frame can draw it with the old one's state.
   const live = useRef<Live[]>([]);
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const { data } = state;
+    data.fill(0);
+    for (let i = 0; i < count; i++) {
+      const home = dome.shards[i].home;
+      for (const row of [0, 2]) data.set([home.x, home.y, home.z, INTACT_SCALE], (row * capacity + i) * 4);
+      for (const row of [1, 3]) data.set(REST_ROTATION, (row * capacity + i) * 4);
+    }
+    state.tex.needsUpdate = true;
+    for (let i = 0; i < holes.data.length; i += 4) holes.data[i] = 0;
+    holes.tex.needsUpdate = true;
     live.current = dome.shards.map(() => ({ body: null, phase: "intact", breakAt: 0, mendFrom: new THREE.Vector3(), mendRotation: new THREE.Quaternion(), mendAt: 0, crack: 0, vx: 0, vy: 0, vz: 0 }));
     return () => {
       for (const item of live.current) {
@@ -279,7 +312,7 @@ function Sky({ palette, broken }: { palette: SkyPalette; broken: { current: numb
         item.body = null;
       }
     };
-  }, [dome, world]);
+  }, [dome, world, state, holes, count, capacity]);
 
   const clock = useRef(0);
   const stoneRef = useRef<THREE.Mesh>(null);
@@ -303,7 +336,7 @@ function Sky({ palette, broken }: { palette: SkyPalette; broken: { current: numb
       } else if (angle < radius * 1.5) {
         item.phase = "cracked";
         item.crack = Math.max(item.crack, 1 - (angle - radius) / (radius * 0.5));
-        state.data[(0 * count + index) * 4 + 3] = INTACT_SCALE - item.crack * 0.018;
+        state.data[(0 * capacity + index) * 4 + 3] = INTACT_SCALE - item.crack * 0.018;
       }
     });
     state.tex.needsUpdate = true;
@@ -330,7 +363,7 @@ function Sky({ palette, broken }: { palette: SkyPalette; broken: { current: numb
   const release = (index: number) => {
     const shard = dome.shards[index];
     const item = live.current[index];
-    const rotation = state.data.subarray((1 * count + index) * 4, (1 * count + index) * 4 + 4);
+    const rotation = state.data.subarray((1 * capacity + index) * 4, (1 * capacity + index) * 4 + 4);
     const desc = rapier.RigidBodyDesc.dynamic()
       .setTranslation(shard.home.x, shard.home.y, shard.home.z)
       .setRotation({ x: rotation[0], y: rotation[1], z: rotation[2], w: rotation[3] })
@@ -366,19 +399,17 @@ function Sky({ palette, broken }: { palette: SkyPalette; broken: { current: numb
       heard.current.crack = now + 0.08;
       sound.play("crack", { gain: 0.2 + size * 0.3, pitch: 1.2 - size * 0.4, pan: shard.home.x / DOME_RADIUS });
     }
-    state.data[(0 * count + index) * 4 + 3] = 0.985;
-    state.data[(4 * count + index) * 4] = 1;
+    state.data[(0 * capacity + index) * 4 + 3] = 0.985;
+    state.data[(4 * capacity + index) * 4] = 1;
     paintHole.current = true;
   };
 
+  // Only the plate's own texels, listed when its sky was cut.
   const setHole = (index: number, open: boolean) => {
-    const { cells, data, width, height } = holes;
+    const { start, pixels } = dome;
+    const { data } = holes;
     const value = open ? 255 : 0;
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        if (cells[y * width + x] === index) data[(y * width + x) * 4] = value;
-      }
-    }
+    for (let k = start[index]; k < start[index + 1]; k++) data[pixels[k] * 4] = value;
     holes.tex.needsUpdate = true;
   };
 
@@ -388,7 +419,7 @@ function Sky({ palette, broken }: { palette: SkyPalette; broken: { current: numb
       if (item.phase === "waiting" || item.phase === "cracked") {
         item.phase = "intact";
         item.crack = 0;
-        state.data[(0 * count + index) * 4 + 3] = INTACT_SCALE;
+        state.data[(0 * capacity + index) * 4 + 3] = INTACT_SCALE;
       }
       if (item.phase !== "falling" || !item.body) return;
       const at = item.body.translation();
@@ -524,12 +555,14 @@ function Sky({ palette, broken }: { palette: SkyPalette; broken: { current: numb
       }
     }
 
+    let released = 0;
     for (let i = 0; i < count; i++) {
       const item = live.current[i];
       if (!item) continue;
-      const position = (0 * count + i) * 4;
-      const rotation = (1 * count + i) * 4;
-      if (item.phase === "waiting" && clock.current >= item.breakAt) {
+      const position = (0 * capacity + i) * 4;
+      const rotation = (1 * capacity + i) * 4;
+      if (item.phase === "waiting" && clock.current >= item.breakAt && released < RELEASES_PER_FRAME) {
+        released += 1;
         release(i);
         setHole(i, true);
       }
@@ -554,8 +587,8 @@ function Sky({ palette, broken }: { palette: SkyPalette; broken: { current: numb
         }
         if (body.isSleeping()) {
           // Already written and not moving, so last frame's position has to match it too.
-          data.copyWithin((2 * count + i) * 4, position, position + 4);
-          data.copyWithin((3 * count + i) * 4, rotation, rotation + 4);
+          data.copyWithin((2 * capacity + i) * 4, position, position + 4);
+          data.copyWithin((3 * capacity + i) * 4, rotation, rotation + 4);
           continue;
         }
         const t = body.translation();
@@ -570,8 +603,8 @@ function Sky({ palette, broken }: { palette: SkyPalette; broken: { current: numb
           hardest = hit;
           hardestIndex = i;
         }
-        data.copyWithin((2 * count + i) * 4, position, position + 4);
-        data.copyWithin((3 * count + i) * 4, rotation, rotation + 4);
+        data.copyWithin((2 * capacity + i) * 4, position, position + 4);
+        data.copyWithin((3 * capacity + i) * 4, rotation, rotation + 4);
         data[position] = t.x;
         data[position + 1] = t.y;
         data[position + 2] = t.z;
@@ -581,8 +614,8 @@ function Sky({ palette, broken }: { palette: SkyPalette; broken: { current: numb
         data[rotation + 3] = r.w;
         dirty = true;
       } else if (item.phase === "mending") {
-        data.copyWithin((2 * count + i) * 4, position, position + 4);
-        data.copyWithin((3 * count + i) * 4, rotation, rotation + 4);
+        data.copyWithin((2 * capacity + i) * 4, position, position + 4);
+        data.copyWithin((3 * capacity + i) * 4, rotation, rotation + 4);
         const t = THREE.MathUtils.clamp((clock.current - item.mendAt) / 1.5, 0, 1);
         const eased = t * t * (3 - 2 * t);
         const shard = dome.shards[i];
@@ -595,13 +628,13 @@ function Sky({ palette, broken }: { palette: SkyPalette; broken: { current: numb
         data[rotation + 1] = quaternion.y;
         data[rotation + 2] = quaternion.z;
         data[rotation + 3] = quaternion.w;
-        data[(4 * count + i) * 4] = 1 - eased;
+        data[(4 * capacity + i) * 4] = 1 - eased;
         dirty = true;
         if (t >= 1) {
           item.phase = "intact";
           item.crack = 0;
           data[position + 3] = INTACT_SCALE;
-          data[(2 * count + i) * 4 + 3] = INTACT_SCALE;
+          data[(2 * capacity + i) * 4 + 3] = INTACT_SCALE;
           setHole(i, false);
         } else {
           open += 1 - eased;
@@ -763,7 +796,7 @@ const shatter: DayDefinition = {
     },
     impact: { type: "range", label: "Impact", min: 0.12, max: 0.9, step: 0.01, value: 0.42 },
     gravity: { type: "range", label: "Gravity", min: -1, max: 1.6, step: 0.01, value: 1 },
-    pieces: { type: "range", label: "Piece size", min: 0.55, max: 2, step: 0.01, value: 1 },
+    pieces: { type: "range", label: "Piece size", min: PIECES.min, max: PIECES.max, step: PIECES.step, value: 1 },
     shatterAll: { type: "action", label: "Break all of it" },
     mend: { type: "action", label: "Mend the sky" }
   },

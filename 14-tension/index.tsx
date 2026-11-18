@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three/webgpu";
 import { orbitPoint, useGrabbable } from "../shared/engine/controls";
 import { focusBlur, focusDistance } from "../shared/engine/Post";
-import { useQuality } from "../shared/engine/quality";
+import { scenePhase, useQuality } from "../shared/engine/quality";
 import { useSetting, useSettingAction } from "../shared/engine/settings";
 import { sound, useBed, useEvery, useMusic } from "../shared/engine/sound";
 import { followPrompt } from "../shared/ui/Follow";
@@ -14,7 +14,7 @@ import { useLook } from "../shared/engine/Stage";
 import type { DayDefinition } from "../shared/engine/types";
 import { Air } from "./air";
 import { aim, Backdrop, Bokeh, sky, useSkyEase } from "./backdrop";
-import { Dew } from "./dew";
+import { bead, Dew, dewCap, type Drop } from "./dew";
 import { Garden } from "./garden";
 import { Silk } from "./silk";
 import { alarm, Spider } from "./spider";
@@ -32,6 +32,9 @@ const LOOK = {
   haze: 0
 };
 
+// A web spun ahead of need, with the dew strung on it.
+type Spun = { key: string; web: Web; drops: Drop[] };
+
 // Threads snapped since the page opened.
 const snapped = { count: 0 };
 
@@ -44,30 +47,49 @@ function Scene() {
   const camera = useThree((state) => state.camera);
   // Every web is spun, hung and dressed from the start, and only the one shown is moved: changing web is then only a
   // matter of which is shown, with every shader already built behind the loader. A new web is spun only for the one
-  // shown.
+  // shown, and is ready before it is asked for: the next of each kind is spun, beaded and settled in the background, a
+  // couple of milliseconds a frame, so that a press only swaps it in.
   const [seeds, setSeeds] = useState<Record<Version, number>>(() => Object.fromEntries(KINDS.map((v) => [v, 1])) as Record<Version, number>);
   const shown = useRef(version);
   shown.current = version;
   useSettingAction("respin", () => setSeeds((s) => ({ ...s, [shown.current]: s[shown.current] + 1 })));
   const fine = tier === "low" ? 0.7 : tier === "medium" ? 0.85 : 1;
-  const spun = useRef(new Map<string, Web>());
-  const webs = useMemo(() => {
-    const kept = new Map<string, Web>();
-    const all = {} as Record<Version, Web>;
-    for (const v of KINDS) {
-      const key = `${v} ${seeds[v]} ${fine}`;
-      let w = spun.current.get(key);
-      if (!w) {
-        w = new Web(LOOKS[v], seeds[v] * 13 + v.length, fine);
-        w.settle();
-      }
-      kept.set(key, w);
-      all[v] = w;
+  const cap = dewCap(tier);
+  const spun = useRef(new Map<string, Spun>());
+  // A web of each kind and seed, strung with its dew and weighed by it; settled later, in one go or a little at a time.
+  const spin = (v: Version, seed: number): Spun => {
+    const key = `${v} ${seed} ${fine} ${cap}`;
+    let made = spun.current.get(key);
+    if (!made) {
+      const web = new Web(LOOKS[v], seed * 13 + v.length, fine);
+      made = { key, web, drops: bead(web, LOOKS[v], cap, seed) };
+      spun.current.set(key, made);
     }
-    spun.current = kept;
+    return made;
+  };
+  const webs = useMemo(() => {
+    const all = {} as Record<Version, Spun>;
+    // Settled under its dew, once, before it is seen: at once if the background has not finished it yet.
+    for (const v of KINDS) {
+      all[v] = spin(v, seeds[v]);
+      all[v].web.settle();
+    }
+    // Only the webs shown and the ones being made ready next are kept.
+    const keep = new Set(KINDS.flatMap((v) => [all[v].key, `${v} ${seeds[v] + 1} ${fine} ${cap}`]));
+    for (const key of spun.current.keys()) if (!keep.has(key)) spun.current.delete(key);
     return all;
-  }, [seeds, fine]);
-  const web = webs[version];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seeds, fine, cap]);
+  useFrame(() => {
+    // The next web of each kind, a little more of it each frame, from the first frames behind the loader on (not while
+    // the shaders are compiled, which holds frames up anyway).
+    if (scenePhase.current === "hold") return;
+    for (const v of KINDS) {
+      const next = spin(v, seeds[v] + 1);
+      if (!next.web.settle(2)) return;
+    }
+  });
+  const web = webs[version].web;
   if (process.env.NODE_ENV !== "production") (globalThis as Record<string, unknown>).__web = web;
 
   useLook(useMemo(() => ({ ...LOOK, exposure: look.exposure, bloom: look.bloom }), [look]));
@@ -217,9 +239,9 @@ function Scene() {
       {KINDS.map((v) => (
         <group key={v} visible={v === version}>
           <Bokeh look={LOOKS[v]} tier={tier} />
-          <Silk web={webs[v]} look={LOOKS[v]} active={v === version} />
-          <Dew web={webs[v]} look={LOOKS[v]} tier={tier} seed={seeds[v]} active={v === version} />
-          {LOOKS[v].spider && <Spider web={webs[v]} look={LOOKS[v]} active={v === version} />}
+          <Silk web={webs[v].web} look={LOOKS[v]} active={v === version} />
+          <Dew web={webs[v].web} drops={webs[v].drops} look={LOOKS[v]} tier={tier} active={v === version} />
+          {LOOKS[v].spider && <Spider web={webs[v].web} look={LOOKS[v]} active={v === version} />}
           <Air look={LOOKS[v]} tier={tier} />
         </group>
       ))}

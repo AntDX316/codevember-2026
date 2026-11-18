@@ -54,8 +54,12 @@ export const focusBlur = uniform(1);
 // A scene can draw straight to the screen while it has nothing for the passes to do, such as a flat page. Off unless a
 // scene sets it, and that scene clears it when it goes.
 export const postBypass = { current: false };
+// A scene with nothing changing on screen can ask for no frame at all: the last one stays up, and the GPU rests. Off unless
+// a scene sets it, and that scene clears it when it goes.
+export const postRest = { current: false };
 // A scene resting on something flat, such as a page, can ask for it untouched: no depth of field and no edge smoothing, so
-// that its text comes out texel for pixel. Off unless a scene sets it, and that scene clears it when it goes.
+// that its text comes out texel for pixel. Off unless a scene sets it, and that scene clears it when it goes. Between 0 and
+// 1, the two are mixed, for easing from one to the other.
 export const postSharp = uniform(0);
 export const airTint = uniform(new THREE.Color("#d8c8b4"));
 export const airAmount = uniform(1);
@@ -253,7 +257,7 @@ export function Post({ look, quality, hasHaze, bounce = true, halfBounce = false
     if (depthOfField && tier !== "low") {
       const viewZ = scenePass.getViewZNode() as any;
       const blurred: any = dof(color, isSky ? isSky.select((focusDistance as any).negate(), viewZ) : viewZ, focusDistance, uniform(depthOfField.range), focusBlur);
-      color = postSharp.greaterThan(0.5).select(color, blurred);
+      color = mix(blurred, color, postSharp) as any;
       held = blurred.getTextureNode();
     }
 
@@ -311,7 +315,7 @@ export function Post({ look, quality, hasHaze, bounce = true, halfBounce = false
 
     // Display transform, then grade in display space so grain sits on top of the image.
     let graded: any = renderOutput(color, toneMapping === "none" ? THREE.NoToneMapping : THREE.NeutralToneMapping, THREE.SRGBColorSpace);
-    if (temporal === false) graded = uniforms.smoothing.greaterThan(0.5).select(fxaa(graded), graded);
+    if (temporal === false) graded = mix(graded, fxaa(graded) as any, uniforms.smoothing) as any;
     else if (tier === "low") graded = fxaa(graded);
 
     const fromCentre = length(screenUV.sub(vec2(0.5)).mul(vec2(1.15, 1)));
@@ -346,8 +350,8 @@ export function Post({ look, quality, hasHaze, bounce = true, halfBounce = false
 
   // Priority 1 takes over from R3F's own render call.
   useFrame(() => {
-    if (phase.current === "hold") return;
-    if (temporal === false) uniforms.smoothing.value = gl.getPixelRatio() < 1.75 && postSharp.value < 0.5 ? 1 : 0;
+    if (phase.current === "hold" || postRest.current) return;
+    if (temporal === false) uniforms.smoothing.value = gl.getPixelRatio() < 1.75 ? 1 - postSharp.value : 0;
     if (postBypass.current) gl.render(scene, camera);
     else stack.render();
   }, 1);

@@ -209,6 +209,7 @@ function Clockwork({ tier, picked, hovered, lights }: { tier: string; picked: { 
       delay: parts.map((_, index) => pointHash(index, 7) * SPREAD),
       form: new Map<Part, Pose & { faced: boolean }>(),
       bodies: new Map<Part, any>(),
+      released: false,
       born: 0,
       lastWorld: null as unknown,
       sunBody: null as any,
@@ -224,6 +225,9 @@ function Clockwork({ tier, picked, hovered, lights }: { tier: string; picked: { 
       clinks: 0,
       raycaster,
       hits: [] as THREE.Intersection[],
+      candidates: [] as { part: Part; enter: number }[],
+      sphere: new THREE.Sphere(),
+      toCentre: new THREE.Vector3(),
       pressed: false,
       lastVelocity: new Map<Part, THREE.Vector3>(),
       framing: { left: 0, target: new THREE.Vector3(), distance: 0, saved: null as { target: THREE.Vector3; distance: number } | null }
@@ -241,12 +245,11 @@ function Clockwork({ tier, picked, hovered, lights }: { tier: string; picked: { 
   }, [parts, state]);
 
   const toSun = useMemo(() => new THREE.Vector3(), []);
+  // Coming back together only switches the bodies off again; they stay in the world for the next pull.
   const removeBodies = () => {
-    for (const body of state.bodies.values()) world.removeRigidBody(body);
-    state.bodies.clear();
-    state.lastVelocity.clear();
-    if (state.sunBody) world.removeRigidBody(state.sunBody);
-    state.sunBody = null;
+    for (const body of state.bodies.values()) body.setEnabled(false);
+    state.sunBody?.setEnabled(false);
+    state.released = false;
   };
 
   // The tall modes need more of the view, so the camera backs off for them, and returns when they end.
@@ -314,16 +317,44 @@ function Clockwork({ tier, picked, hovered, lights }: { tier: string; picked: { 
     sound.play("rustle", { gain: 0.14, pitch: 1.4 });
   }, [formValue]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Every part can be picked by its real triangles, so what is under the pointer is what it gets.
+  // Every part can be picked by its real triangles, so what is under the pointer is what it gets. Their triangles are
+  // many, so the parts are tried nearest bounding sphere first, and once one is hit nothing whose sphere starts beyond
+  // that point can be in front of it.
   const pickPart = (ray: THREE.Ray) => {
-    state.raycaster.ray.copy(ray);
-    state.hits.length = 0;
-    for (const part of parts) part.mesh.raycast(state.raycaster, state.hits);
+    const { raycaster, hits, candidates, sphere, toCentre } = state;
+    raycaster.ray.copy(ray);
+    candidates.length = 0;
+    for (const part of parts) {
+      const mesh = part.mesh;
+      if (!mesh.visible) continue;
+      const geometry = mesh.geometry;
+      if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+      sphere.copy(geometry.boundingSphere as THREE.Sphere).applyMatrix4(mesh.matrixWorld);
+      const along = toCentre.copy(sphere.center).sub(ray.origin).dot(ray.direction);
+      const offSq = ray.distanceSqToPoint(sphere.center);
+      const radiusSq = sphere.radius * sphere.radius;
+      if (offSq > radiusSq) continue;
+      // Where the ray enters the sphere, or nought from inside it.
+      const enter = along - Math.sqrt(radiusSq - offSq);
+      if (along + Math.sqrt(radiusSq - offSq) < 0) continue;
+      candidates.push({ part, enter: Math.max(0, enter) });
+    }
+    candidates.sort((a, b) => a.enter - b.enter);
     let best: THREE.Intersection | null = null;
-    for (const hit of state.hits) if (hit.object.visible && (!best || hit.distance < best.distance)) best = hit;
-    if (!best) return null;
-    const part = parts.find((candidate) => candidate.mesh === best!.object) as Part;
-    return { part, distance: best.distance, point: best.point.clone() };
+    let bestPart: Part | null = null;
+    for (const { part, enter } of candidates) {
+      if (best && enter > best.distance) break;
+      hits.length = 0;
+      part.mesh.raycast(raycaster, hits);
+      for (const hit of hits) {
+        if (!best || hit.distance < best.distance) {
+          best = hit;
+          bestPart = part;
+        }
+      }
+    }
+    if (!best || !bestPart) return null;
+    return { part: bestPart, distance: best.distance, point: best.point.clone() };
   };
 
   // Which body is under the pointer, for the card. Small ones get a little extra room, as long as nothing is in front of them.
@@ -395,7 +426,7 @@ function Clockwork({ tier, picked, hovered, lights }: { tier: string; picked: { 
         state.sunTarget.copy(sun.mesh.position);
       } else if (state.mode === "loose") {
         state.heldOffset.copy(hit.part.mesh.position).sub(point);
-        state.bodies.get(hit.part)?.wakeUp();
+        if (state.released) state.bodies.get(hit.part)?.wakeUp();
       } else {
         state.heldPlane = hit.part.mesh.position.y;
         state.heldAngle = planAngle(point, hit.part, state.heldPlane);
@@ -415,7 +446,9 @@ function Clockwork({ tier, picked, hovered, lights }: { tier: string; picked: { 
 
   const bodies = useMemo(() => parts.filter((part) => SKY_BODIES.has(part.id)), [parts]);
   const scratchCentre = useMemo(() => new THREE.Vector3(), []);
-  const hoverRay = useMemo(() => ({ ray: new THREE.Ray(), ndc: new THREE.Vector2(), inside: false, last: null as string | null }), []);
+  // `moved` is set by the pointer, `view` is the camera as it was at the last test, and `wait` how long until the next
+  // test while nothing moves.
+  const hoverRay = useMemo(() => ({ ray: new THREE.Ray(), ndc: new THREE.Vector2(), inside: false, last: null as string | null, moved: true, view: new THREE.Matrix4(), wait: 0, under: null as string | null }), []);
 
   // Pressing the zodiac band without dragging picks that sign. Pressing anything in front of it does not.
   useEffect(() => {
@@ -442,7 +475,10 @@ function Clockwork({ tier, picked, hovered, lights }: { tier: string; picked: { 
       state.pressed = false;
     };
     const onUp = (event: PointerEvent) => {
-      if (event.pointerType === "mouse") hoverRay.inside = true;
+      if (event.pointerType === "mouse") {
+        hoverRay.inside = true;
+        hoverRay.moved = true;
+      }
       const press = down;
       down = null;
       if (!press || state.pressed) return;
@@ -459,6 +495,7 @@ function Clockwork({ tier, picked, hovered, lights }: { tier: string; picked: { 
         const box = canvas.getBoundingClientRect();
         hoverRay.ndc.set(((event.clientX - box.left) / box.width) * 2 - 1, -((event.clientY - box.top) / box.height) * 2 + 1);
         hoverRay.inside = !event.buttons;
+        hoverRay.moved = true;
       }
       if (event.buttons) return;
       const sign = signUnder(event);
@@ -482,15 +519,17 @@ function Clockwork({ tier, picked, hovered, lights }: { tier: string; picked: { 
     };
   }, [gl, camera, hovered, store]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Every part's body is made once, while the page loads, and left switched off: making sixty of them, with their
+  // colliders, on the frame the Sun was first pulled held that frame up. Pulling it only puts each where its part is now.
   const createBodies = () => {
     state.lastWorld = world.bodies;
-    state.born = performance.now();
+    state.bodies.clear();
+    state.lastVelocity.clear();
+    state.released = false;
     parts.forEach((part) => {
       if (part === sun) return;
-      const mesh = part.mesh;
       const description = rapier.RigidBodyDesc.dynamic()
-        .setTranslation(mesh.position.x, mesh.position.y, mesh.position.z)
-        .setRotation({ x: mesh.quaternion.x, y: mesh.quaternion.y, z: mesh.quaternion.z, w: mesh.quaternion.w })
+        .setEnabled(false)
         .setLinearDamping(part.orbit ? 0.22 : 1.5)
         .setAngularDamping(0.42)
         .setCcdEnabled(part.kind === "bar");
@@ -504,15 +543,37 @@ function Clockwork({ tier, picked, hovered, lights }: { tier: string; picked: { 
             : rapier.ColliderDesc.cuboid(...shape.size).setTranslation(...shape.at);
       collider.setDensity(part.kind === "gear" ? 2.4 : 1.2).setFriction(0.45).setRestitution(0.28).setCollisionGroups(GROUP_GHOST);
       world.createCollider(collider, body);
-      // It leaves at the speed it was going, turning as it was.
-      const spin = (part.spin(state.drive + 0.01) - part.spin(state.drive)) / 0.01;
-      body.setAngvel({ x: 0, y: THREE.MathUtils.clamp(spin * state.velocity, -6, 6), z: 0 }, true);
       state.bodies.set(part, body);
       state.lastVelocity.set(part, new THREE.Vector3());
     });
-    const sunBody = world.createRigidBody(rapier.RigidBodyDesc.kinematicPositionBased().setTranslation(sun.mesh.position.x, sun.mesh.position.y, sun.mesh.position.z));
+    const sunBody = world.createRigidBody(rapier.RigidBodyDesc.kinematicPositionBased().setEnabled(false));
     world.createCollider(rapier.ColliderDesc.ball(SUN_RADIUS).setRestitution(0.3), sunBody);
     state.sunBody = sunBody;
+  };
+
+  // The machine comes apart: each body starts where its part is, a ghost again, at the speed it was going.
+  const releaseBodies = () => {
+    state.released = true;
+    state.born = performance.now();
+    parts.forEach((part) => {
+      const body = state.bodies.get(part);
+      if (!body) return;
+      const mesh = part.mesh;
+      body.setTranslation({ x: mesh.position.x, y: mesh.position.y, z: mesh.position.z }, false);
+      body.setRotation({ x: mesh.quaternion.x, y: mesh.quaternion.y, z: mesh.quaternion.z, w: mesh.quaternion.w }, false);
+      body.setLinvel({ x: 0, y: 0, z: 0 }, false);
+      body.userData = undefined;
+      body.collider(0).setCollisionGroups(GROUP_GHOST);
+      body.setEnabled(true);
+      // It leaves at the speed it was going, turning as it was.
+      const spin = (part.spin(state.drive + 0.01) - part.spin(state.drive)) / 0.01;
+      body.setAngvel({ x: 0, y: THREE.MathUtils.clamp(spin * state.velocity, -6, 6), z: 0 }, true);
+      (state.lastVelocity.get(part) as THREE.Vector3).set(0, 0, 0);
+    });
+    const at = sun.mesh.position;
+    state.sunBody.setTranslation({ x: at.x, y: at.y, z: at.z }, false);
+    state.sunBody.setNextKinematicTranslation({ x: at.x, y: at.y, z: at.z });
+    state.sunBody.setEnabled(true);
   };
 
   const push = useMemo(() => new THREE.Vector3(), []);
@@ -542,9 +603,18 @@ function Clockwork({ tier, picked, hovered, lights }: { tier: string; picked: { 
       under = cardFor(state.held);
       shown = under === "crank" ? parts.find((part) => part.id === "crankKnob") : parts.find((part) => part.id === under);
     } else if (hoverRay.inside) {
-      hoverRay.ray.origin.setFromMatrixPosition(camera.matrixWorld);
-      hoverRay.ray.direction.set(hoverRay.ndc.x, hoverRay.ndc.y, 0.5).unproject(camera).sub(hoverRay.ray.origin).normalize();
-      under = bodyUnder(hoverRay.ray);
+      // Tested again when the pointer or the view moves, and otherwise a few times a second, which is often enough to
+      // catch a planet coming round under a pointer that stays still. Testing every frame cost a tenth of the frame time.
+      hoverRay.wait -= rawDelta;
+      if (hoverRay.moved || hoverRay.wait <= 0 || !hoverRay.view.equals(camera.matrixWorld)) {
+        hoverRay.moved = false;
+        hoverRay.wait = 0.15;
+        hoverRay.view.copy(camera.matrixWorld);
+        hoverRay.ray.origin.setFromMatrixPosition(camera.matrixWorld);
+        hoverRay.ray.direction.set(hoverRay.ndc.x, hoverRay.ndc.y, 0.5).unproject(camera).sub(hoverRay.ray.origin).normalize();
+        hoverRay.under = bodyUnder(hoverRay.ray);
+      }
+      under = hoverRay.under;
     }
     if (under) {
       const body = shown ?? (bodies.find((part) => part.id === under) as Part);
@@ -609,11 +679,10 @@ function Clockwork({ tier, picked, hovered, lights }: { tier: string; picked: { 
       }
     }
 
+    // Made on the first frame, while the loader is still up, and again only if the physics world is ever rebuilt.
+    if (state.lastWorld !== world.bodies) createBodies();
     if (mode === "loose") {
-      if (state.bodies.size === 0 || state.lastWorld !== world.bodies) {
-        state.bodies.clear();
-        createBodies();
-      }
+      if (!state.released) releaseBodies();
       const strength = pull.current;
       const sunPosition = sun.mesh.position;
 

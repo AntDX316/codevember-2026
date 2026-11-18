@@ -41,7 +41,9 @@ for (const step of [0.125, 0.375, 0.625, 0.875]) SPOTS.push({ x: 1, z: step, sid
 // Coins picked up since the page opened (the total is kept across visits; this is not).
 const found = { count: 0 };
 
-export default function Coins() {
+// Mounted for the whole visit and shown only while playing, so that its shader is compiled with the rest during load
+// rather than when a game starts.
+export default function Coins({ playing }: { playing: boolean }) {
   const camera = useThree((state) => state.camera);
   const { tier } = useQuality();
   const reach = tier === "high" ? 24 : tier === "medium" ? 19 : 14;
@@ -87,10 +89,19 @@ export default function Coins() {
     };
   }, [scratch]);
 
+  // Each game starts with every coin in its place, as a fresh mount did.
+  useEffect(() => {
+    if (!playing) return;
+    taken.clear();
+    scratch.streak = 0;
+    scratch.last = -Infinity;
+  }, [playing, taken, scratch]);
+
   useFrame(({ clock }) => {
+    mesh.visible = playing;
     const heights = liveHeights.current;
-    // Laid once the hedges have all risen.
-    if (!heights || hedgesUp.at === Infinity) {
+    // Laid once the hedges have all risen, and only in a game.
+    if (!playing || !heights || hedgesUp.at === Infinity) {
       mesh.count = 0;
       return;
     }
@@ -146,6 +157,9 @@ export default function Coins() {
       }
     }
     mesh.count = n;
+    // Only the coins placed this frame are sent, not the room for four thousand.
+    mesh.instanceMatrix.clearUpdateRanges();
+    mesh.instanceMatrix.addUpdateRange(0, n * 16);
     mesh.instanceMatrix.needsUpdate = true;
     for (let g = 0; g < got; g++) collect(t);
     if (process.env.NODE_ENV !== "production") Object.assign(globalThis, { __coins: { shown: n, taken, camera } });

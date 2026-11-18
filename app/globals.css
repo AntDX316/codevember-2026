@@ -1754,3 +1754,191 @@ a.cv-step:hover {
   }
 }
 
+
+/* A phone's dock (a day's phoneDock): its main settings along the bottom, above the ruler. Not on a desktop. */
+.cv-dock {
+  display: none;
+}
+
+@media (max-width: 900px), (hover: none) {
+  .cv-dock {
+    position: absolute;
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    /* Down over the ruler: on a phone the dock is what the day is played with, so it takes the bottom edge. */
+    bottom: max(10px, env(safe-area-inset-bottom));
+    z-index: 5;
+    max-width: 520px;
+    display: grid;
+    gap: 12px;
+    padding: 12px 14px 14px;
+    border: 1px solid var(--cv-line);
+    border-radius: 18px;
+    background: var(--cv-glass);
+    -webkit-backdrop-filter: blur(22px) saturate(1.3);
+    backdrop-filter: blur(22px) saturate(1.3);
+    pointer-events: auto;
+    transition: opacity 0.22s ease, transform 0.32s var(--cv-ease);
+  }
+
+  .cv-dock-pills {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 8px);
+    display: flex;
+    gap: 6px;
+  }
+
+  .cv-dock-hidden {
+    opacity: 0;
+    transform: translateY(12px);
+    pointer-events: none;
+  }
+
+  .cv-dock-hidden * {
+    pointer-events: none !important;
+  }
+
+  .cv-dock .cv-colour-pad {
+    height: 46px;
+    margin-top: 2px;
+  }
+
+  .cv-dock .cv-colour-presets {
+    display: none;
+  }
+
+  .cv-dock .cv-control {
+    gap: 4px;
+  }
+
+  .cv-dock-pair {
+    display: flex;
+    gap: 16px;
+  }
+
+  .cv-dock-pair > .cv-dock-row {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .cv-dock-choices {
+    display: flex;
+    gap: 6px;
+  }
+
+  .cv-dock-chip {
+    appearance: none;
+    flex: 1;
+    min-height: 34px;
+    padding: 0 6px;
+    border: 1px solid var(--cv-line);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--cv-ink);
+    font: inherit;
+    font-size: 12px;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+
+  .cv-dock-chip-on {
+    background: var(--cv-ink);
+    border-color: var(--cv-ink);
+    color: #101115;
+  }
+
+  /* With a dock, the title and the credit give way to it: the ruler still says which day this is. */
+  .cv-hud:has(.cv-dock) .cv-title {
+    display: none;
+  }
+
+  .cv-hud:has(.cv-dock) .cv-credit {
+    display: none;
+  }
+
+  .cv-hud:has(.cv-dock) .cv-colour-presets,
+  .cv-hud:has(.cv-panel-open) .cv-prompt-low {
+    display: none;
+  }
+
+  /* A low prompt, on a phone: small, up in the top left under the bar, so it is clear of the subject and the dock. */
+  .cv-prompt.cv-prompt-low {
+    place-content: start;
+    justify-items: start;
+    text-align: left;
+    padding: calc(max(16px, env(safe-area-inset-top)) + 42px) max(20px, env(safe-area-inset-right)) 0 max(20px, env(safe-area-inset-left));
+  }
+
+  .cv-prompt.cv-prompt-low p {
+    max-width: min(7.5em, calc(100vw - 190px));
+    font-size: 32px;
+    text-wrap: balance;
+  }
+
+  .cv-prompt.cv-prompt-low small {
+    font-size: 13px;
+  }
+}
+
+/* A phone on its side: the dock moves to the bottom right corner, narrower, so the scene keeps the middle. */
+@media (hover: none) and (orientation: landscape) and (max-height: 520px) {
+  .cv-dock {
+    left: auto;
+    width: 330px;
+    gap: 8px;
+    padding: 10px 12px 12px;
+  }
+
+  .cv-dock .cv-colour-pad {
+    height: 34px;
+  }
+
+  .cv-dock-chip {
+    min-height: 30px;
+  }
+
+  .cv-hud:has(.cv-dock) .cv-phone-pills {
+    top: auto;
+    right: auto;
+    left: max(20px, env(safe-area-inset-left));
+    bottom: calc(max(10px, env(safe-area-inset-bottom)) + 58px);
+    flex-direction: row;
+    flex-wrap: nowrap;
+  }
+}
+
+/* A round icon button, half as big again as a pill so it is easy to find and hit; it fades away while not wanted. */
+.cv-pill-icon {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  min-width: 54px;
+  height: 54px;
+  padding: 0;
+  border-radius: 50%;
+  color: #fff;
+  transition: opacity 0.3s ease, transform 0.3s var(--cv-ease);
+}
+
+.cv-pill-gone {
+  opacity: 0;
+  transform: scale(0.85);
+  pointer-events: none !important;
+}
+
+/* On a desktop the same icon buttons stand just left of the controls panel, at its top. A phone has them on its dock. */
+.cv-desk-icons {
+  display: none;
+}
+
+@media (min-width: 901px) and (hover: hover) {
+  .cv-desk-icons {
+    position: absolute;
+    top: calc(max(16px, env(safe-area-inset-top)) + 48px);
+    right: calc(max(20px, env(safe-area-inset-right)) + 264px + 12px);
+    display: flex;
+    gap: 8px;
+  }
+}

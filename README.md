@@ -169,7 +169,8 @@ Every day also has its own settings panel, with quality settings that adapt to y
 ```
 01-fold/ ... 07-hollow/ One directory per day, each with a README
 shared/engine/          Renderer, post-processing, camera, grabbing, boundaries, sound, settings
-shared/ui/              Calendar, loading screen and on-screen controls
+shared/hub/             The calendar, drawn on the GPU: a page that turns into a 3D month you fly into each day from
+shared/ui/              Loading screen and on-screen controls
 shared/days.ts          The 30 words, and which days are out
 shared/registry.ts      Loads each day on demand
 app/                    Next.js routes: the calendar at /, each day at /NN-word/

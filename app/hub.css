@@ -1,0 +1,494 @@
+/* The hub's own controls, over the drawn page. */
+.cv-hub-hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+
+.cv-hub-actions .cv-pill:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.cv-hub-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 8px);
+  text-align: center;
+  color: var(--cv-dim);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.4s ease, transform 0.5s var(--cv-ease);
+}
+
+.cv-hub-hint-on {
+  opacity: 1;
+  transform: none;
+}
+
+/* The calendar as links, for screen readers and the keyboard. Out of sight until focused. */
+.cv-hub-links {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.cv-hub-links:focus-within {
+  width: auto;
+  height: auto;
+  clip-path: none;
+  top: 16px;
+  left: 16px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: var(--cv-glass);
+  pointer-events: auto;
+}
+
+/* On the way back from a day: its controls fade while the camera settles. */
+.cv-hub-leaving .cv-hud {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s ease;
+}
+
+/* A day's last frame, held while the hub comes up behind it. */
+.cv-hub-held {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 30;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.85s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.cv-hub-held-gone {
+  opacity: 0;
+}
+
+.cv-hub-actions {
+  position: absolute;
+  top: calc(max(20px, env(safe-area-inset-top)) + 40px);
+  right: max(20px, env(safe-area-inset-right));
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+/* Over the portal under the pointer. The hub sets its transform to the point just above the portal's frame each frame;
+   the card hangs up from that point, centred on it. */
+.cv-hub-tip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.cv-hub-tip-card {
+  position: absolute;
+  bottom: 10px;
+  left: 0;
+  width: min(280px, calc(100vw - 32px));
+  translate: -50% 0;
+  padding: 12px 14px 11px;
+  border: 1px solid var(--cv-line);
+  border-radius: 12px;
+  background: var(--cv-glass);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 0.22s var(--cv-ease),
+    transform 0.22s var(--cv-ease);
+}
+
+.cv-hub-tip-on .cv-hub-tip-card {
+  opacity: 1;
+  transform: none;
+}
+
+.cv-hub-tip-mark,
+.cv-hub-tip-go {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cv-dim);
+}
+
+.cv-hub-tip-today {
+  margin-left: 8px;
+  color: var(--cv-accent);
+}
+
+.cv-hub-tip-word {
+  margin: 4px 0 6px;
+  font-family: var(--font-display), Arial, sans-serif;
+  font-weight: 800;
+  font-size: 26px;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.cv-hub-tip-blurb {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--cv-dim);
+}
+
+.cv-hub-tip-go {
+  color: var(--cv-accent);
+}
+
+
+/* Flying into a day: the space dims to black as the camera reaches it. */
+.cv-space-hud {
+  transition: opacity 0.4s ease;
+}
+
+.cv-space-leaving .cv-space-hud {
+  opacity: 0;
+}
+
+.cv-space-leaving .cv-stage::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  /* The loader's own black, so that it comes up out of this one without a seam. As DARK in spaces/kit.tsx. */
+  background: #08090c;
+  pointer-events: none;
+  animation: cv-space-dark 0.8s cubic-bezier(0.45, 0, 0.55, 1) forwards;
+}
+
+@keyframes cv-space-dark {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Across the top in both views, in the window's corners: Adam's name home on the left; on the right, sound in the world. */
+.cv-space-marks {
+  position: absolute;
+  top: max(20px, env(safe-area-inset-top));
+  left: max(20px, env(safe-area-inset-left));
+  right: max(20px, env(safe-area-inset-right));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: auto;
+}
+
+/* Where else Adam is, together, just left of the way between the views. */
+.cv-space-social {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-right: 20px;
+}
+
+.cv-space-social .cv-mark,
+.cv-space-marks .cv-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 14px 10px;
+  margin: -14px -10px;
+  color: rgba(244, 238, 228, 0.62);
+  transition: color 0.4s ease;
+}
+
+.cv-space-social .cv-mark:hover,
+.cv-space-marks .cv-mark:hover {
+  color: #f4eee4;
+}
+
+@media (max-width: 560px) {
+  .cv-space-social {
+    gap: 18px;
+    margin-right: 10px;
+  }
+  .cv-space-social .cv-mark {
+    font-size: 0;
+    gap: 0;
+  }
+}
+
+/* The way between the views: the one thing on the page that asks to be pressed. */
+.cv-hub-actions {
+  align-items: center;
+}
+
+.cv-space-go {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: 999px;
+  background: #f1e4cf;
+  color: #241a10;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.4) inset;
+  transition: transform 0.25s var(--cv-ease), box-shadow 0.25s ease, background 0.25s ease;
+}
+
+.cv-space-go span {
+  transition: transform 0.25s var(--cv-ease);
+}
+
+.cv-space-go:hover {
+  background: #f8eddc;
+  transform: translateY(-1px);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(255, 255, 255, 0.5) inset;
+}
+
+.cv-space-go:hover span {
+  transform: translateX(3px);
+}
+
+.cv-space-go:disabled {
+  opacity: 0.55;
+  cursor: default;
+  transform: none;
+}
+
+/* On the page, the way to the calendar sits on the cards' top right corner: placed there each frame by the page, which
+   knows where it has scrolled them to. */
+.cv-hub-actions.cv-hub-actions-page {
+  top: 0;
+  right: auto;
+  left: 0;
+}
+
+/* As a flight, in the calendar the top right is the badges' own: the way back sits at the bottom right. In place, it stays on
+   the cards' corner. */
+.cv-space-hud-world:not(.cv-space-hud-follow) .cv-hub-actions {
+  top: auto;
+  bottom: calc(max(20px, env(safe-area-inset-bottom)) + 4px);
+}
+
+.cv-space-hud-world:not(.cv-space-hud-follow) .cv-hub-hint {
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 62px);
+}
+
+/* In place, drawn by the scene as solid buttons on the page: out of sight here, until a keyboard brings one into focus. */
+.cv-hub-actions.cv-hub-actions-solid {
+  top: auto;
+  bottom: calc(max(20px, env(safe-area-inset-bottom)) + 4px);
+  right: max(20px, env(safe-area-inset-right));
+  left: auto;
+  transform: none !important;
+  clip-path: inset(50%);
+}
+
+.cv-hub-actions.cv-hub-actions-solid:focus-within {
+  clip-path: none;
+}
+
+/* Which sounds to play, for trying them out: folded away behind one pill at the bottom left, opening upward. */
+.cv-space-sounds {
+  position: absolute;
+  left: max(20px, env(safe-area-inset-left));
+  bottom: calc(max(20px, env(safe-area-inset-bottom)) + 52px);
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-start;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.cv-space-sounds summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.cv-space-sounds summary::-webkit-details-marker {
+  display: none;
+}
+
+.cv-space-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: default;
+}
+
+.cv-space-choice-label {
+  color: var(--cv-dim);
+}
+
+.cv-space-choice select {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding-right: 14px;
+  cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right 5px center, right 1px center;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+}
+
+.cv-space-choice select option {
+  color: #111;
+}
+
+/* Which move the cards make into the calendar, and how fast, for trying them out: at the top right on the page. */
+.cv-space-settings {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 560px) {
+  .cv-space-settings {
+    flex-direction: column;
+    align-items: flex-end;
+  }
+}
+
+/* The page's scroll, the browser's own: an empty box as tall as the page over the canvas (spaces/unfold.tsx). Off the page it
+   lets everything through to the canvas. */
+.cv-page-scroll {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cv-page-scroll-off {
+  pointer-events: none;
+}
+
+/* The page as HTML while it rests or scrolls (spaces/mirror.ts): laid in the scrolling box where the GPU draws it, over the
+   canvas's sky, and only shown, never pressed: presses go on through to the box. */
+.cv-page-html {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.cv-page-html-on {
+  visibility: visible;
+}
+
+.cv-page-html > * {
+  position: absolute;
+  display: block;
+}
+
+/* A card as the GPU draws it (hub/materials.ts): the page's dark, the poster cropped to cover, the gradient up from the
+   bottom, its words, and over them a pixel of border mixed from the page's dark and its ink. */
+.cv-page-html-card {
+  overflow: hidden;
+  border-radius: 10px;
+  background: #08090c;
+  transition: transform 0.35s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.cv-page-html-card .cv-page-html-poster,
+.cv-page-html-shade,
+.cv-page-html-card .cv-page-html-art {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.cv-page-html-poster {
+  transition: transform 0.9s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.cv-page-html-shade {
+  background: linear-gradient(to top, rgba(8, 9, 12, 0.72), rgba(8, 9, 12, 0) 45%);
+}
+
+.cv-page-html-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgb(36.1 36.6 38.5);
+  border-radius: 10px;
+  transition: border-color 0.35s ease;
+}
+
+.cv-page-html-card.cv-open::after {
+  border-color: rgb(59.5 59.6 60.6);
+}
+
+.cv-page-html-card.cv-open.cv-hover::after {
+  border-color: rgb(153.1 151.6 149);
+}
+
+.cv-page-html-card.cv-today::after,
+.cv-page-html-card.cv-today.cv-hover::after {
+  border-color: #ffb48a;
+}
+
+.cv-page-html-card.cv-hover {
+  transform: translateY(-7px);
+}
+
+.cv-page-html-card.cv-hover .cv-page-html-poster {
+  transform: scale(1.04);
+}
+
+/* The buttons, flat, on a spring as the GPU's grow and sink. */
+.cv-page-html-button {
+  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.cv-page-html-button.cv-hover {
+  transform: scale(var(--grow));
+}
+
+.cv-page-html-button.cv-pressed {
+  transform: scale(var(--sink));
+}
+
+.cv-page-html-button > canvas {
+  position: absolute;
+}
+
+.cv-page-html-arrow {
+  transition: transform 0.35s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.cv-page-html-button.cv-hover .cv-page-html-arrow {
+  transform: translateX(3px);
+}

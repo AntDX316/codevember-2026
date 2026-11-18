@@ -801,11 +801,15 @@ export function Wing() {
   const key: [number, number, number] = [weather.sun[0] * 5, 0.9 + weather.sun[1] * 5, weather.sun[2] * 5];
   const species = SPECIES[useSetting<string>("species")] ?? SPECIES.gull;
   useLook({ background: "#0c0e11", exposure: 0.85, bloom: 0.08, bloomThreshold: 0.92, haze: 0, vignette: 0.55, gi: 1 });
-  const materials = useMemo(() => [featherMaterial(species.flight), featherMaterial(species.covert)], [species]);
+  // One set of materials for every bird, built once. Changing the bird only changes their uniforms and each feather's
+  // tone, so no shader, feather or arm is built again mid-visit: rebuilding them all took over a second.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- dressed as the bird changes, below.
+  const materials = useMemo(() => [featherMaterial(species.flight, true), featherMaterial(species.covert, true)], []);
   const tissue = useMemo(() => {
     // Where the skin shows between the smallest coverts it is so thick with tiny feathers it reads as their colour.
-    const skin = new THREE.MeshPhysicalNodeMaterial({ color: species.covert.tip, roughness: 0.85, sheen: 1, sheenRoughness: 0.5, side: THREE.DoubleSide });
-    skin.sheenColor = new THREE.Color(species.covert.edge ?? species.covert.tip);
+    // Its colours are the material's own uniforms, set as the bird changes.
+    const skin = new THREE.MeshPhysicalNodeMaterial({ roughness: 0.85, sheen: 1, sheenRoughness: 0.5, side: THREE.DoubleSide });
+    skin.sheenColor = new THREE.Color();
     // The bones, seen as by x-ray through skin and feathers: bright where their surface turns away, at the edges of
     // each shaft, faint across it, with the grain of the bone in it and the joint ends glossier.
     const bone = new THREE.MeshBasicNodeMaterial({ transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending });
@@ -817,7 +821,13 @@ export function Wing() {
     const glow = pow(rim, 1.6).mul(2.6).add(0.3).add(ends.mul(0.4)).mul(pores.mul(0.25).add(0.85)) as any;
     bone.colorNode = mix(color("#3f6c96"), color("#e8f6ff"), pow(rim, 1.2)).mul(glow).mul(strength);
     return { skin, bone, strength };
-  }, [species]);
+  }, []);
+  useEffect(() => {
+    materials[0].dress(species.flight);
+    materials[1].dress(species.covert);
+    tissue.skin.color.set(species.covert.tip);
+    tissue.skin.sheenColor.set(species.covert.edge ?? species.covert.tip);
+  }, [species, materials, tissue]);
   useEffect(
     () => () => {
       materials.forEach((m) => m.material.dispose());
@@ -965,8 +975,10 @@ export function Wing() {
       </group>
       </group>
       <Airflow on={airflow} style={airStyle} />
-      {FLOCK.slice(0, Math.max(0, Math.min(Math.round(flock), narrowScreen() ? 3 : 5) - 1)).map((place, i) => (
-        <Follower key={i} place={place} materials={materials} tissue={tissue} tone={species.tone} />
+      {/* Every bird the slider can reach is built during load and only shown or hidden by it: building one as it
+          appeared took about 300 ms. */}
+      {FLOCK.slice(0, (narrowScreen() ? 3 : 5) - 1).map((place, i) => (
+        <Follower key={i} place={place} shown={i < Math.min(Math.round(flock), narrowScreen() ? 3 : 5) - 1} materials={materials} tissue={tissue} tone={species.tone} />
       ))}
     </>
   );
@@ -997,7 +1009,19 @@ const FLOCK = (() => {
 })();
 
 // One more bird of the flock: the same pair of wings, out of step with the lead, drifting a little about its place.
-function Follower({ place, materials, tissue, tone }: { place: (typeof FLOCK)[number]; materials: Feather[]; tissue: { skin: THREE.Material; bone: THREE.Material }; tone: Species["tone"] }) {
+function Follower({
+  place,
+  shown,
+  materials,
+  tissue,
+  tone
+}: {
+  place: (typeof FLOCK)[number];
+  shown: boolean;
+  materials: Feather[];
+  tissue: { skin: THREE.Material; bone: THREE.Material };
+  tone: Species["tone"];
+}) {
   const iks = useMemo(() => [newIk(), newIk()], []);
   const body = useMemo<Body>(() => ({ offset: new THREE.Vector3(), held: false, epoch: 0, grip: new THREE.Vector3() }), []);
   const group = useRef<THREE.Group>(null);
@@ -1005,6 +1029,8 @@ function Follower({ place, materials, tissue, tone }: { place: (typeof FLOCK)[nu
   // While the lead glides, each follower now and then beats its wings for a few strokes, then glides again.
   const bout = useMemo(() => ({ on: place.phase > 0.5, left: 0.5 + place.drift * 0.6 }), [place]);
   useFrame((_, rawDelta) => {
+    // A hidden bird waits where it is, costing nothing, and picks up from there when it is shown.
+    if (!shown) return;
     const delta = Math.min(rawDelta, 1 / 20) * pace.current;
     clock.current += delta;
     bout.left -= delta;
@@ -1016,10 +1042,10 @@ function Follower({ place, materials, tissue, tone }: { place: (typeof FLOCK)[nu
     group.current?.position.set(place.at.x + Math.sin(t * 0.31) * 0.08, place.at.y + heave(t, iks[0], place.phase) + Math.sin(t * 0.47) * 0.12 + Math.sin(t * 1.1 + place.drift) * 0.05, place.at.z + Math.sin(t * 0.23) * 0.1);
   });
   return (
-    <group ref={group} position={place.at}>
+    <group ref={group} position={place.at} visible={shown}>
       <group rotation-y={Math.PI}>
-        <WingSide side={1} ik={iks[0]} body={body} materials={materials} tissue={tissue} tone={tone} lead={false} phase={place.phase} bout={bout} />
-        <WingSide side={-1} ik={iks[1]} body={body} materials={materials} tissue={tissue} tone={tone} lead={false} phase={place.phase} bout={bout} />
+        <WingSide side={1} ik={iks[0]} body={body} materials={materials} tissue={tissue} tone={tone} lead={false} phase={place.phase} bout={bout} awake={shown} />
+        <WingSide side={-1} ik={iks[1]} body={body} materials={materials} tissue={tissue} tone={tone} lead={false} phase={place.phase} bout={bout} awake={shown} />
       </group>
     </group>
   );
@@ -1034,7 +1060,8 @@ function WingSide({
   tone,
   lead = true,
   phase = 0,
-  bout
+  bout,
+  awake = true
 }: {
   side: 1 | -1;
   ik: Ik;
@@ -1048,6 +1075,8 @@ function WingSide({
   phase?: number;
   // A follower's own spells of flapping while the lead glides.
   bout?: { on: boolean };
+  // False while this bird of the flock is hidden, when its wings need not move.
+  awake?: boolean;
 }) {
   const beating = useSetting<boolean>("flapping");
   const plan = useMemo(layout, []);
@@ -1059,7 +1088,6 @@ function WingSide({
         const tones = new THREE.InstancedBufferAttribute(new Float32Array(count * 2), 2);
         const bow = new THREE.InstancedBufferAttribute(new Float32Array(count * 2), 2);
         bow.setUsage(THREE.DynamicDrawUsage);
-        for (const p of plan.plumes) if (p.kind === k) tones.setXY(p.slot, tone(p.role, p.k), p.seed);
         geometry.setAttribute("tone", tones);
         geometry.setAttribute("bow", bow);
         const mesh = new THREE.InstancedMesh(geometry, materials[kind.material].material, count);
@@ -1067,10 +1095,15 @@ function WingSide({
         mesh.receiveShadow = true;
         mesh.frustumCulled = false;
         mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-        return { mesh, bow };
+        return { mesh, bow, tones };
       }),
-    [plan, materials, tone]
+    [plan, materials]
   );
+  // How far each feather leans to the bird's second colours, written again when the bird changes; the geometry stays.
+  useEffect(() => {
+    for (const p of plan.plumes) meshes[p.kind].tones.setXY(p.slot, tone(p.role, p.k), p.seed);
+    for (const { tones } of meshes) tones.needsUpdate = true;
+  }, [plan, meshes, tone]);
   const arm = useMemo(() => {
     const built = buildArm(tissue.skin, tissue.bone);
     // Only the lead is x-rayed; the rest of the flock never shows its bones.
@@ -1183,6 +1216,7 @@ function WingSide({
 
   const clock = useRef(0);
   useFrame((_, rawDelta) => {
+    if (!awake) return;
     const delta = Math.min(rawDelta, 1 / 20) * pace.current;
     // The wing's own clock, slowed with everything else in slow motion.
     clock.current += delta;

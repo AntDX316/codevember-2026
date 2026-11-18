@@ -1,7 +1,7 @@
 "use client";
 
-import { useFrame } from "@react-three/fiber";
-import { useEffect, useMemo } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import { useEffect, useLayoutEffect, useMemo } from "react";
 import * as THREE from "three/webgpu";
 import { Break, Fn, If, Loop, abs, attribute, color, dot, exp, float, floor, fract, fwidth, max, min, mix, normalGeometry, normalize, normalWorld, positionGeometry, positionWorld, pow, reflect, select, sin, smoothstep, texture, time, vec2, vec3, vec4 } from "three/tsl";
 import { useLook } from "../shared/engine/Stage";
@@ -10,7 +10,7 @@ import { walking } from "../shared/engine/walk";
 import { liveHeights, LOOK, SINK, SIZE } from "./hedge";
 import { CELL, HEIGHT, labyrinthMaterials, sharedAir, THICK } from "./hedge-look";
 import { away, farOut, fogged, steady, thinned, toEye } from "./style-air";
-import { warp } from "./warp";
+import { bend, bends, warp } from "./warp";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- TSL's node types do not model every operator. */
 
@@ -247,67 +247,111 @@ type Kind = "hedge" | "ground" | "sky" | "life" | "dressing" | "tech";
 const kindOf = (material: THREE.NodeMaterial): Kind =>
   material.name === "tech" ? "tech" : material.name === "hedge" || material.name === "ground" || material.name === "sky" ? (material.name as Kind) : material instanceof THREE.MeshBasicNodeMaterial ? "life" : "dressing";
 
-// Each material as the natural maze made it, to go back to, and each style's nodes once built, to swap back in.
-const natural = new WeakMap<THREE.NodeMaterial, Nodes>();
-const built = new WeakMap<THREE.NodeMaterial, Map<Style, Nodes>>();
-const applied = new WeakMap<THREE.NodeMaterial, Style>();
-
-function snapshot(material: THREE.NodeMaterial): Nodes {
-  const kept: Nodes = { visible: material.visible, lights: material.lights };
-  for (const [key, value] of Object.entries(material)) {
-    // The mask is the bent world's, and stays whatever the style.
-    if (key.endsWith("Node") && key !== "maskNode" && value) kept[key] = value;
-  }
-  return kept;
+// Each hedge, ground and sky material's Tron copy, made once: the natural material as it is, less every node of its own
+// but the bent world's mask (its shape and its look go, as the Tron maze draws plain glowing boxes), with the Tron nodes
+// on it, and drawn through the bend as the natural one is.
+const tronCopies = new WeakMap<THREE.NodeMaterial, THREE.NodeMaterial>();
+function tronOf(material: THREE.NodeMaterial, kind: "hedge" | "ground" | "sky") {
+  const made = tronCopies.get(material);
+  if (made) return made;
+  const copy = material.clone();
+  for (const key of Object.keys(copy)) if (key.endsWith("Node") && key !== "maskNode") (copy as any)[key] = null;
+  Object.assign(copy, BUILD.tron[kind]());
+  if (bends(material)) bend(copy);
+  material.addEventListener("dispose", () => copy.dispose());
+  tronCopies.set(material, copy);
+  return copy;
 }
 
-function apply(material: THREE.NodeMaterial, style: Style) {
-  if (!natural.has(material)) natural.set(material, snapshot(material));
-  const original = natural.get(material) as Nodes;
-  const kind = kindOf(material);
-  // The Tron maze's chips and cables and craft, only there; and the birds, which have no place in its sky.
-  if (kind === "tech" || material.name === "birds") {
-    material.visible = (kind === "tech") === (style === "tron");
-    return;
+// A mesh drawn in the Tron maze in place of a natural one: the same geometry, the same instances (so the same buffers on
+// the GPU), the same place, and as many drawn, read from the natural mesh as it changes; only the material differs.
+function twinOf(mesh: THREE.Mesh, material: THREE.NodeMaterial) {
+  const instanced = (mesh as THREE.InstancedMesh).isInstancedMesh === true;
+  const twin = instanced ? new THREE.InstancedMesh(mesh.geometry, material, 1) : new THREE.Mesh(mesh.geometry, material);
+  if (instanced) {
+    const from = mesh as THREE.InstancedMesh;
+    (twin as THREE.InstancedMesh).instanceMatrix.dispose();
+    Object.defineProperty(twin, "instanceMatrix", { get: () => from.instanceMatrix, set: () => undefined });
+    Object.defineProperty(twin, "count", { get: () => from.count, set: () => undefined });
   }
-  if (kind === "life") return;
-  // Whatever another style set goes, and the natural nodes come back, before this style's go on.
-  for (const key of Object.keys(material)) if (key.endsWith("Node") && key !== "maskNode") (material as any)[key] = null;
-  Object.assign(material, original);
-  if (style !== "natural") {
-    if (kind === "dressing") {
-      material.visible = false;
-    } else {
-      for (const key of Object.keys(original)) if (key.endsWith("Node")) (material as any)[key] = null;
-      let cache = built.get(material);
-      if (!cache) built.set(material, (cache = new Map()));
-      let nodes = cache.get(style);
-      if (!nodes) cache.set(style, (nodes = BUILD[style][kind]()));
-      Object.assign(material, nodes);
-    }
-  }
-  material.needsUpdate = true;
+  // Moved with the natural mesh, which the sky and the ground are every frame, by sharing where it is.
+  for (const key of ["position", "quaternion", "scale"] as const) Object.defineProperty(twin, key, { value: mesh[key] });
+  twin.name = mesh.name;
+  twin.renderOrder = mesh.renderOrder;
+  twin.castShadow = mesh.castShadow;
+  twin.receiveShadow = mesh.receiveShadow;
+  twin.frustumCulled = mesh.frustumCulled;
+  twin.layers.mask = mesh.layers.mask;
+  twin.raycast = () => undefined;
+  return twin;
 }
 
-// Keeps every labyrinth material in the chosen style, including any made later, as when the quality tier changes.
+// Lets the renderer go of a twin, leaving the buffers it shares with its natural mesh alone (an instanced mesh's own
+// dispose would free its instances, which are the natural mesh's).
+function release(twin: THREE.Mesh) {
+  twin.removeFromParent();
+  THREE.Object3D.prototype.dispose.call(twin);
+}
+
+// Keeps the maze in the chosen style. Both styles are built up front, so that changing style builds nothing: every
+// hedge, ground and sky mesh has a twin wearing its Tron copy beside it, and the Tron maze's own pieces are there all
+// along. A style only shows one set and hides the other, and the load's warm-up, which compiles hidden meshes too,
+// compiles both. Meshes made later, as when the quality tier changes, are twinned as they appear.
 export function useStyle(style: Style) {
   useLook(useMemo(() => ({ ...LOOK, ...LOOKS[style] }), [style]));
+  const scene = useThree((state) => state.scene);
+  const twins = useMemo(() => new Map<THREE.Mesh, THREE.Mesh>(), []);
 
-  useEffect(() => {
-    for (const material of labyrinthMaterials) {
-      if (applied.get(material) === style) continue;
-      apply(material, style);
-      applied.set(material, style);
-    }
-  }, [style]);
+  const show = useMemo(() => {
+    const found: THREE.Mesh[] = [];
+    return (style: Style) => {
+      const tron = style === "tron";
+      found.length = 0;
+      scene.traverse((object) => {
+        const material = (object as THREE.Mesh).material as THREE.NodeMaterial;
+        if ((object as THREE.Mesh).isMesh && labyrinthMaterials.has(material)) found.push(object as THREE.Mesh);
+      });
+      for (const mesh of found) {
+        const material = mesh.material as THREE.NodeMaterial;
+        const kind = kindOf(material);
+        if (kind === "hedge" || kind === "ground" || kind === "sky") {
+          let twin = twins.get(mesh);
+          if (!twin && mesh.parent) {
+            twin = twinOf(mesh, tronOf(material, kind));
+            mesh.parent.add(twin);
+            twins.set(mesh, twin);
+          }
+          mesh.visible = !tron;
+          if (twin) twin.visible = tron;
+        } else if (kind === "tech") {
+          // The Tron maze's chips and cables and craft, only there.
+          mesh.visible = tron;
+        } else if (kind === "dressing" || material.name === "birds") {
+          // What grows on the hedges and lies on the ground, and the birds, which have no place in the Tron sky.
+          mesh.visible = !tron;
+        }
+      }
+      // Twins of meshes taken away go with them.
+      for (const [mesh, twin] of twins) {
+        if (mesh.parent && twin.parent === mesh.parent) continue;
+        release(twin);
+        twins.delete(mesh);
+      }
+    };
+  }, [scene, twins]);
+
+  // At once, before the first frame, so that the twins are there for the warm-up to compile.
+  useLayoutEffect(() => show(style), [show, style]);
+  useEffect(
+    () => () => {
+      for (const twin of twins.values()) release(twin);
+      twins.clear();
+    },
+    [twins]
+  );
 
   useFrame(() => {
-    for (const material of labyrinthMaterials) {
-      if (applied.get(material) === style) continue;
-      // A material made while natural is already as it should be.
-      if (style !== "natural" || applied.has(material)) apply(material, style);
-      applied.set(material, style);
-    }
+    show(style);
     steady.value = 1 / (1 + walking.amount * 1.2);
     // Eased as the natural mist is, so both clear and close in together.
     const eased = (amount: number) => 1 - (1 - amount) ** 4;

@@ -27,3 +27,8 @@ export function hoverBody(rigid: any, hover: Hover, gravity: number, clock: numb
 // Whatever is moving near the small rocks, which rest when they have arrived and have to be woken in time to be hit.
 export type Pusher = { x: number; y: number; z: number; reach: number };
 export const pushers = new Set<Pusher>();
+
+// A change of gravity used to reach every rock in the same frame, and enabling, waking and re-weighting five hundred
+// bodies at once held that frame up for a third of a second. Each rock takes the new gravity up on its own turn instead,
+// one in this many frames, so the work is spread thin and the whole shelf has it within a few frames.
+export const GRAVITY_SPREAD = 8;

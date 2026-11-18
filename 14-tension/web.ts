@@ -210,13 +210,28 @@ export class Web {
     });
   }
 
-  // Hung and left to settle before anyone sees it, so it starts at rest rather than dropping into its sag.
-  settle() {
-    for (let n = 0; n < 120; n++) this.step(1 / 60, 8);
+  // Steps of settling still to do, and whether it is done.
+  private unsettled = 120;
+  settled = false;
+
+  // Hung and left to settle before anyone sees it, so it starts at rest rather than dropping into its sag. All at once,
+  // or a few steps at a time for no longer than `budget` milliseconds, to be carried on later: a web made ready in the
+  // background over idle frames comes out exactly as one settled in one go. Returns whether it is done.
+  settle(budget = Infinity) {
+    if (this.settled) return true;
+    const until = performance.now() + budget;
+    while (this.unsettled > 0) {
+      this.step(1 / 60, 8);
+      this.unsettled -= 1;
+      if (performance.now() >= until) break;
+    }
+    if (this.unsettled > 0) return false;
     this.previous.set(this.position);
     this.shaken.fill(0);
     this.calm.fill(0);
     this.time = 0;
+    this.settled = true;
+    return true;
   }
 
   // Dew weighs the points it hangs nearest.

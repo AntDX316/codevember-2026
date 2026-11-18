@@ -144,7 +144,8 @@ export function Caustics({
   strength = 1,
   limit = 60,
   fixed = false,
-  quiet = false
+  quiet = false,
+  shown = true
 }: {
   trace: Tracer;
   centre: any;
@@ -157,6 +158,8 @@ export function Caustics({
   fixed?: boolean;
   // Built and drawn, but adding no light: for building its shaders ahead of time.
   quiet?: boolean;
+  // Whether it is traced at all. A grid kept for later is left out of the map, costing nothing, until it is wanted.
+  shown?: boolean;
 }) {
   const { tier } = useQuality();
   const lines = Math.round((detail * (fixed || tier === "high" ? 1 : tier === "medium" ? 0.8 : 0.6)) / Math.sqrt(bands.length));
@@ -190,6 +193,11 @@ export function Caustics({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trace, lines, wide, tall, bands, strength, limit, gain]);
+
+  useEffect(() => {
+    meshes.forEach((mesh) => (mesh.visible = shown));
+    stir();
+  }, [meshes, shown]);
 
   useEffect(() => {
     stir();

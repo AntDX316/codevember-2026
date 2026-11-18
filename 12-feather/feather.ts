@@ -140,9 +140,36 @@ export type Feather = {
   light: { value: THREE.Vector3 };
   // From 0 to 1, the barbs fall away one by one, to show what is under the feathers.
   reveal: { value: number };
+  // Puts on another bird's plumage. Colours, amounts and finish are all uniforms, so this never builds a new shader.
+  dress: (p: Plumage) => void;
 };
 
-export function featherMaterial(p: Plumage): Feather {
+// A palette's colours as uniforms. `barred` turns its bars on or off, `barring` is how many there are.
+const paletteUniforms = () => ({
+  base: uniform(new THREE.Color()) as any,
+  tip: uniform(new THREE.Color()) as any,
+  bars: uniform(new THREE.Color()) as any,
+  from: uniform(0.3) as any,
+  to: uniform(1) as any,
+  barring: uniform(0) as any,
+  barred: uniform(0) as any
+});
+type PaletteUniforms = ReturnType<typeof paletteUniforms>;
+const setPalette = (to: PaletteUniforms, c: Colours, barring: number) => {
+  to.base.value.set(c.base);
+  to.tip.value.set(c.tip);
+  to.bars.value.set(c.bars ?? "#2a2018");
+  const [from, end] = c.blend ?? [0.3, 1];
+  to.from.value = from;
+  to.to.value = end;
+  to.barring.value = barring;
+  to.barred.value = barring > 0 ? 1 : 0;
+};
+
+// `dressable` builds every branch a plumage might need (a second set of colours, bars on either, a fringe), each
+// weighed by a uniform that is 0 where the bird has none, so one material can be dressed as any bird. Mixing by 0
+// leaves the colour exactly as it was without the branch.
+export function featherMaterial(p: Plumage, dressable = false): Feather {
   const material = new THREE.MeshPhysicalNodeMaterial({
     side: THREE.DoubleSide,
     roughness: p.roughness ?? 0.62,
@@ -152,18 +179,65 @@ export function featherMaterial(p: Plumage): Feather {
     alphaTest: 0.5
   });
   material.shadowSide = THREE.DoubleSide;
+  const hasSecond = dressable || !!p.second;
+  const barred = dressable || (p.barring ?? 0) > 0;
+  const secondBarred = dressable || (p.second?.barring ?? 0) > 0;
+  const hasEdge = dressable || !!p.edge;
+  const look = {
+    first: paletteUniforms(),
+    second: paletteUniforms(),
+    secondOn: uniform(0) as any,
+    barbs: uniform(150) as any,
+    ragged: uniform(0.14) as any,
+    splits: uniform(0.03) as any,
+    down: uniform(0.18) as any,
+    edge: uniform(new THREE.Color()) as any,
+    edgeAmount: uniform(0.6) as any,
+    sideEdge: uniform(1) as any,
+    tipFringe: uniform(0) as any,
+    speckle: uniform(0.35) as any,
+    shaft: uniform(new THREE.Color()) as any,
+    shaftAmount: uniform(1) as any,
+    sheen: uniform(0.6) as any,
+    glow: uniform(0) as any
+  };
+  // Light coming through from behind: a feather is thin enough to glow when the light is past it. Its own copy, since
+  // dressing copies another bird's light into it.
+  const light = uniform((p.light ?? new THREE.Vector3(0, 4, -4)).clone());
+  const dress = (q: Plumage) => {
+    setPalette(look.first, q, q.barring ?? 0);
+    if (q.second) setPalette(look.second, q.second, q.second.barring ?? 0);
+    look.secondOn.value = q.second ? 1 : 0;
+    look.barbs.value = q.barbs ?? 150;
+    look.ragged.value = q.ragged ?? 0.14;
+    look.splits.value = q.splits ?? 0.03;
+    look.down.value = q.down ?? 0.18;
+    look.edge.value.set(q.edge ?? "#ffffff");
+    look.edgeAmount.value = q.edge ? (q.edgeAmount ?? 0.6) : 0;
+    look.sideEdge.value = q.sideEdge ?? 1;
+    look.tipFringe.value = q.tipFringe ?? 0;
+    look.speckle.value = q.speckle ?? 0.35;
+    look.shaft.value.set(q.shaft ?? "#e8dcc6");
+    look.shaftAmount.value = q.shaftAmount ?? 1;
+    look.sheen.value = q.sheen ?? 0.6;
+    look.glow.value = q.glow ?? 0;
+    if (q.light) light.value.copy(q.light);
+    // Reference uniforms of the material: changing them never rebuilds it.
+    material.roughness = q.roughness ?? 0.62;
+  };
+  dress(p);
   const vane = attribute("vane", "vec3") as any;
   const u = vane.x as any;
   const v = vane.y as any;
   const w = vane.z as any;
   const across = abs(v) as any;
   const seed = hash(instanceIndex) as any;
-  const tone = (p.second ? (attribute("tone", "vec2") as any) : vec2(0, 0)) as any;
+  const tone = (hasSecond ? (attribute("tone", "vec2") as any) : vec2(0, 0)) as any;
   // A few numbers of its own for each feather, so that no two are quite alike.
   const own = [11, 23, 37, 53].map((k) => hash(instanceIndex.add(k)) as any);
 
   // Barbs: a coordinate that counts them along the shaft, each side its own.
-  const count = float(p.barbs ?? 150);
+  const count = look.barbs;
   const coord = u.mul(count).sub(across.mul(w).mul(count).mul(0.35)) as any;
   const f = fract(coord) as any;
   const id = floor(coord).add(step(v, 0).mul(517)).add(seed.mul(97)) as any;
@@ -171,16 +245,16 @@ export function featherMaterial(p: Plumage): Feather {
 
   const eyeDistance = p.eye ? (length(vec2(u.sub(0.86).div(0.1), v.mul(w).div(0.075))) as any) : float(9);
   const eyeMask = float(1).sub(smoothstep(0.95, 1.2, eyeDistance)) as any;
-  const downMask = (p.allDown ? float(1) : float(1).sub(smoothstep(0.0, p.down ?? 0.18, u.sub(0.02)))) as any;
+  const downMask = (p.allDown ? float(1) : float(1).sub(smoothstep(0.0, look.down, u.sub(0.02)))) as any;
   const wisp = float(p.wisp ?? 0).mul(float(1).sub(eyeMask)) as any;
 
   // The gap between neighbouring barbs, wider where they hang loose.
   const gapWidth = mix(mix(float(0.05), float(0.7), wisp), float(0.6), downMask) as any;
   let alpha = float(1).sub(step(f, gapWidth).mul(fine.max(wisp).max(downMask))) as any;
   // Barbs end raggedly, some short, and here and there a few have come apart.
-  const end = float(1).sub(hash(id.add(7.7)).mul(own[1].add(0.5).mul(p.ragged ?? 0.14))).sub(downMask.mul(0.25)) as any;
+  const end = float(1).sub(hash(id.add(7.7)).mul(own[1].add(0.5).mul(look.ragged))).sub(downMask.mul(0.25)) as any;
   alpha = alpha.mul(step(across, end));
-  const split = step(float(1).sub(p.splits ?? 0.03), hash(floor(coord.div(3)).add(seed.mul(13)).add(step(v, 0).mul(31)))) as any;
+  const split = step(float(1).sub(look.splits), hash(floor(coord.div(3)).add(seed.mul(13)).add(step(v, 0).mul(31)))) as any;
   alpha = alpha.mul(float(1).sub(split.mul(step(0.15, across)).mul(float(1).sub(eyeMask))));
   // Down: wisps of barbules, soft at the edge.
   const fluff = mx_noise_float(vec3(coord.mul(0.6), across.mul(22), seed.mul(40))) as any;
@@ -192,22 +266,21 @@ export function featherMaterial(p: Plumage): Feather {
   const onShaft = step(across.mul(w), float(0.0065).mul(float(1).sub(u.mul(0.65))).add(0.0012)) as any;
   alpha = alpha.max(onShaft);
 
-  const palette = (c: Colours, barring: number) => {
+  const palette = (c: PaletteUniforms, withBars: boolean) => {
     // Where one colour gives way to the next, and the bars, sit a little differently on every feather.
-    const [from, to] = c.blend ?? [0.3, 1];
     const shift = own[0].sub(0.5).mul(0.07) as any;
-    let col = mix(color(c.base), color(c.tip), smoothstep(float(from).add(shift), float(to).add(shift), u.add(across.mul(own[2].sub(0.5).mul(0.06))))) as any;
-    if (barring > 0) {
-      const band = smoothstep(0.35, 0.65, sin(u.mul(own[1].sub(0.5).mul(0.12).add(1).mul(barring)).add(across.mul(own[2].mul(0.4).add(0.3))).add(own[3].mul(0.25)).mul(Math.PI * 2)).mul(0.5).add(0.5)) as any;
-      col = mix(col, color(c.bars ?? "#2a2018"), band.mul(0.85).mul(smoothstep(0.15, 0.35, u)));
+    let col = mix(c.base, c.tip, smoothstep(c.from.add(shift), c.to.add(shift), u.add(across.mul(own[2].sub(0.5).mul(0.06))))) as any;
+    if (withBars) {
+      const band = smoothstep(0.35, 0.65, sin(u.mul(own[1].sub(0.5).mul(0.12).add(1).mul(c.barring)).add(across.mul(own[2].mul(0.4).add(0.3))).add(own[3].mul(0.25)).mul(Math.PI * 2)).mul(0.5).add(0.5)) as any;
+      col = mix(col, c.bars, band.mul(0.85).mul(smoothstep(0.15, 0.35, u)).mul(c.barred));
     }
     return col;
   };
-  let tint = palette(p, p.barring ?? 0) as any;
-  if (p.second) tint = mix(tint, palette(p.second, p.second.barring ?? 0), tone.x);
-  if (p.edge) {
-    const rim = smoothstep(own[3].sub(0.5).mul(0.12).add(0.72), 1, across).mul(p.sideEdge ?? 1).max(smoothstep(0.9, 0.985, u.add(across.mul(0.03))).mul(p.tipFringe ?? 0)) as any;
-    tint = mix(tint, color(p.edge), rim.mul(p.edgeAmount ?? 0.6));
+  let tint = palette(look.first, barred) as any;
+  if (hasSecond) tint = mix(tint, palette(look.second, secondBarred), tone.x.mul(look.secondOn));
+  if (hasEdge) {
+    const rim = smoothstep(own[3].sub(0.5).mul(0.12).add(0.72), 1, across).mul(look.sideEdge).max(smoothstep(0.9, 0.985, u.add(across.mul(0.03))).mul(look.tipFringe)) as any;
+    tint = mix(tint, look.edge, rim.mul(look.edgeAmount));
   }
   if (p.eye) {
     const ring = (inner: number, outer: number) => smoothstep(inner - 0.04, inner + 0.04, eyeDistance).mul(float(1).sub(smoothstep(outer - 0.04, outer + 0.04, eyeDistance)));
@@ -223,14 +296,14 @@ export function featherMaterial(p: Plumage): Feather {
   // Flecks of pigment and grime here and there across the vane, never in the same place twice.
   const fleck = smoothstep(0.55, 0.68, mx_noise_float(vec3(u.mul(64), v.mul(w).mul(64), own[2].mul(91)))) as any;
   const fleckle = smoothstep(0.5, 0.62, mx_noise_float(vec3(u.mul(9), v.mul(w).mul(9), own[3].mul(37)))) as any;
-  tint = mix(tint, tint.mul(0.42), fleck.mul(fleckle.mul(0.8).add(0.2)).mul(p.speckle ?? 0.35).mul(float(1).sub(downMask)));
+  tint = mix(tint, tint.mul(0.42), fleck.mul(fleckle.mul(0.8).add(0.2)).mul(look.speckle).mul(float(1).sub(downMask)));
   // Each barb catches the light along its length, darker in the grooves.
   tint = tint.mul(float(0.8).add(sin(f.mul(Math.PI)).mul(0.2))).mul(hash(id).mul(0.12).add(0.94));
   tint = mix(tint, tint.mul(1.35).add(0.06), downMask.mul(0.6));
-  tint = mix(tint, color(p.shaft ?? "#e8dcc6"), onShaft.mul(p.shaftAmount ?? 1));
+  tint = mix(tint, look.shaft, onShaft.mul(look.shaftAmount));
   material.colorNode = tint;
   material.opacityNode = alpha;
-  material.sheenNode = mix(tint, vec3(1), 0.35).mul(p.sheen ?? 0.6) as any;
+  material.sheenNode = mix(tint, vec3(1), 0.35).mul(look.sheen) as any;
 
   if (p.iridescence) {
     material.iridescence = p.iridescence;
@@ -239,11 +312,9 @@ export function featherMaterial(p: Plumage): Feather {
     material.iridescenceNode = mix(float(p.iridescence * 0.5), float(p.iridescence), eyeMask.max(float(1).sub(downMask))) as any;
   }
 
-  // Light coming through from behind: a feather is thin enough to glow when the light is past it.
-  const light = uniform(p.light ?? new THREE.Vector3(0, 4, -4));
   if (p.glow) {
     const facing = clamp(dot(normalize(positionWorld.sub(cameraPosition)), normalize(positionWorld.sub(light))), 0, 1) as any;
-    material.emissiveNode = tint.mul(pow(facing, 5).mul(p.glow).add(0.01));
+    material.emissiveNode = tint.mul(pow(facing, 5).mul(look.glow).add(0.01));
   }
 
   const bend = uniform(new THREE.Vector2());
@@ -261,5 +332,5 @@ export function featherMaterial(p: Plumage): Feather {
     }
     material.positionNode = positionGeometry.add(vec3(0, 0, lift));
   }
-  return { material, bend, time, light, reveal };
+  return { material, bend, time, light, reveal, dress };
 }

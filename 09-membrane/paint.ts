@@ -1,5 +1,5 @@
 import { useFrame, useThree } from "@react-three/fiber";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import * as THREE from "three/webgpu";
 import { fract, sin } from "three/tsl";
 import { orbitPoint } from "../shared/engine/controls";
@@ -8,12 +8,15 @@ import { orbitPoint } from "../shared/engine/controls";
 
 export const hash = (x: any): any => fract(sin(x.mul(127.1).add(0.3)).mul(43758.5453));
 
-// Each shape frames itself when it opens. The rig may not be up on the first frame, so this waits for it.
-export function useView(position: [number, number, number], target: [number, number, number]) {
+// Each shape frames itself when it is chosen. The rig may not be up on the first frame, so this waits for it.
+export function useView(position: [number, number, number], target: [number, number, number], active: boolean) {
   const camera = useThree((state) => state.camera);
   const placed = useRef(false);
+  useEffect(() => {
+    if (!active) placed.current = false;
+  }, [active]);
   useFrame(() => {
-    if (placed.current || !orbitPoint.current) return;
+    if (!active || placed.current || !orbitPoint.current) return;
     placed.current = true;
     // A tall screen sees less across, so it stands further back.
     const back = Math.max(1, 1.15 / (camera as THREE.PerspectiveCamera).aspect);

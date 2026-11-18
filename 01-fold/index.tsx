@@ -47,7 +47,7 @@ import { Haze, KeyLight, StudioEnvironment, StudioFloor } from "../shared/engine
 import { useLook } from "../shared/engine/Stage";
 import type { DayDefinition, Look } from "../shared/engine/types";
 import { Flock, MAX_SHEEP } from "./flock";
-import { edgeDistance, type Family, familyFor, FoldRig, groundHeight, MAX_FACETS, SHAPE_FAMILY } from "./forms";
+import { edgeDistance, type Family, type FamilyKey, familyFor, FoldRig, groundHeight, locateIn, MAX_FACETS, SHAPE_FAMILY } from "./forms";
 import { paintBack, paintLand, PANEL_WIDTH, SHEET_WIDTH } from "./map";
 import { FoldDial } from "./dial";
 import { buildBack, buildRiver, buildTerrain, makeGrass, makeProps, RIVER_WIDTH } from "./sheet";
@@ -96,6 +96,7 @@ const HOURS: Record<string, Hour> = {
 };
 
 const SHAPE_CYCLE = ["pleats", "facets", "plane", "wave", "box", "roll"];
+const FAMILIES = [...new Set(Object.values(SHAPE_FAMILY))];
 const FLOCK_CENTRE: [number, number, number] = [0, 5.4, -1];
 const SHEET_W = SHEET_WIDTH / 2;
 
@@ -339,16 +340,17 @@ function Sheet({ sheepCount, hour }: { sheepCount: number; hour: Hour }) {
   const cell = tier === "high" ? 0.1 : tier === "medium" ? 0.14 : 0.2;
   const grassCount = tier === "high" ? 42000 : tier === "medium" ? 28000 : 8000;
 
-  const built = useRef(new Map<string, { terrain: THREE.BufferGeometry; back: THREE.BufferGeometry; river: THREE.BufferGeometry }>());
-  const geometryFor = (family: Family) => {
-    const key = `${family.key}-${cell}`;
-    let geometry = built.current.get(key);
-    if (!geometry) {
-      geometry = { terrain: buildTerrain(family, cell), back: buildBack(family), river: buildRiver(family) };
-      built.current.set(key, geometry);
+  // Every family's sheet, built while the page loads: building one when a fold first needed it took a fifth of a
+  // second. Land grows by each family's settled pose, so that is worked out first.
+  const sheets = useMemo(() => {
+    const made = new Map<FamilyKey, { terrain: THREE.BufferGeometry; back: THREE.BufferGeometry; river: THREE.BufferGeometry }>();
+    for (const key of FAMILIES) {
+      const family = familyFor(key);
+      rig.settleGrowth(family);
+      made.set(key, { terrain: buildTerrain(family, cell), back: buildBack(family), river: buildRiver(family) });
     }
-    return geometry;
-  };
+    return made;
+  }, [rig, cell]);
 
   const grassData = useMemo(() => makeGrass(grassCount), [grassCount]);
   const grass = useMemo(() => {
@@ -388,62 +390,93 @@ function Sheet({ sheepCount, hour }: { sheepCount: number; hour: Hour }) {
     return geometry;
   }, [propData]);
 
+  // Where every blade and prop stands on each family's sheet, and what the rig must keep off the floor, worked out
+  // while the page loads. Placing 42,000 blades again on every change of family hitched the fold.
+  const seatings = useMemo(() => {
+    const made = new Map<FamilyKey, { feet: Float32Array; ids: Float32Array; props: Float32Array; propIds: Float32Array; propBounds: THREE.Sphere; guards: Float32Array<ArrayBuffer> }>();
+    const measure = new THREE.BufferGeometry();
+    for (const key of FAMILIES) {
+      const family = familyFor(key);
+      rig.settleGrowth(family);
+      const feet = new Float32Array(grassData.count * 4);
+      const ids = new Float32Array(grassData.count);
+      // A sample of the land and all that stands on it, which the rig keeps off the floor along with the paper.
+      const guards: number[] = [];
+      const sample = Math.ceil(grassData.count / 900);
+      let hint = -1;
+      for (let i = 0; i < grassData.count; i++) {
+        const x = grassData.x[i];
+        const z = grassData.z[i];
+        hint = locateIn(family, x, z, hint);
+        const facet = family.facets[Math.max(0, hint)];
+        // Mown short along each crease, so the creases can be seen and found.
+        const mown = family.creases.length ? Math.min(1, Math.max(0, (edgeDistance(facet, x, z) - 0.05) * 7)) : 1;
+        const height = groundHeight(facet, x, z);
+        const blade = facet.growth > 0 && facet.upright ? grassData.scale[i] * mown : 0;
+        feet[i * 4] = x;
+        feet[i * 4 + 1] = height;
+        feet[i * 4 + 2] = z;
+        feet[i * 4 + 3] = blade;
+        ids[i] = facet.id;
+        if (i % sample === 0) guards.push(facet.id, x, height + blade, z, blade > 0 ? 0.03 : 0);
+      }
+
+      const props = new Float32Array(propData.position.length);
+      const propIds = new Float32Array(propData.position.length / 3);
+      for (const prop of propData.props) {
+        const located = locateIn(family, prop.x, prop.z);
+        const facet = family.facets[Math.max(0, located)];
+        const size = facet.growth > 0 && facet.upright ? 1 : 0;
+        const y = groundHeight(facet, prop.x, prop.z) - 0.005;
+        let top = 0;
+        let reach = 0;
+        for (let k = 0; k < prop.count; k++) {
+          const source = (prop.start + k) * 3;
+          top = Math.max(top, propData.position[source + 1]);
+          reach = Math.max(reach, Math.hypot(propData.position[source], propData.position[source + 2]));
+          props[source] = prop.x + propData.position[source] * size;
+          props[source + 1] = y + propData.position[source + 1] * size;
+          props[source + 2] = prop.z + propData.position[source + 2] * size;
+          propIds[prop.start + k] = facet.id;
+        }
+        if (size > 0) guards.push(facet.id, prop.x, y + top, prop.z, reach);
+      }
+      measure.setAttribute("position", new THREE.BufferAttribute(props, 3));
+      measure.computeBoundingSphere();
+      made.set(key, { feet, ids, props, propIds, propBounds: measure.boundingSphere!.clone(), guards: new Float32Array(guards) });
+    }
+    return made;
+  }, [rig, grassData, propData]);
+
   const terrainMesh = useRef<THREE.Mesh>(null);
   const backMesh = useRef<THREE.Mesh>(null);
   const riverMesh = useRef<THREE.Mesh>(null);
   const propMesh = useRef<THREE.Mesh>(null);
 
   // Re-seats everything on the sheet for a family. Called only with the sheet lying flat, so nothing visibly jumps.
+  // Everything was placed while the page loaded; this only swaps geometry and copies arrays.
   const seat = (family: Family) => {
-    const geometry = geometryFor(family);
-    if (terrainMesh.current) terrainMesh.current.geometry = geometry.terrain;
-    if (backMesh.current) backMesh.current.geometry = geometry.back;
-    if (riverMesh.current) riverMesh.current.geometry = geometry.river;
+    const sheet = sheets.get(family.key)!;
+    if (terrainMesh.current) terrainMesh.current.geometry = sheet.terrain;
+    if (backMesh.current) backMesh.current.geometry = sheet.back;
+    if (riverMesh.current) riverMesh.current.geometry = sheet.river;
 
+    const seating = seatings.get(family.key)!;
     const ids = grass.geometry.getAttribute("aFacet") as THREE.InstancedBufferAttribute;
     const feet = grass.geometry.getAttribute("aPlace") as THREE.InstancedBufferAttribute;
-    // A sample of the land and all that stands on it, which the rig keeps off the floor along with the paper.
-    const guards: number[] = [];
-    const sample = Math.ceil(grassData.count / 900);
-    let hint = -1;
-    for (let i = 0; i < grassData.count; i++) {
-      const x = grassData.x[i];
-      const z = grassData.z[i];
-      hint = rig.locate(x, z, hint);
-      const facet = family.facets[Math.max(0, hint)];
-      // Mown short along each crease, so the creases can be seen and found.
-      const mown = family.creases.length ? Math.min(1, Math.max(0, (edgeDistance(facet, x, z) - 0.05) * 7)) : 1;
-      const height = groundHeight(facet, x, z);
-      const blade = facet.growth > 0 && facet.upright ? grassData.scale[i] * mown : 0;
-      feet.setXYZW(i, x, height, z, blade);
-      ids.setX(i, facet.id);
-      if (i % sample === 0) guards.push(facet.id, x, height + blade, z, blade > 0 ? 0.03 : 0);
-    }
+    (feet.array as Float32Array).set(seating.feet);
+    (ids.array as Float32Array).set(seating.ids);
     feet.needsUpdate = true;
     ids.needsUpdate = true;
 
     const positions = propGeometry.getAttribute("position") as THREE.BufferAttribute;
     const propIds = propGeometry.getAttribute("aFacet") as THREE.BufferAttribute;
-    for (const prop of propData.props) {
-      const located = rig.locate(prop.x, prop.z);
-      const facet = family.facets[Math.max(0, located)];
-      const size = facet.growth > 0 && facet.upright ? 1 : 0;
-      const y = groundHeight(facet, prop.x, prop.z) - 0.005;
-      let top = 0;
-      let reach = 0;
-      for (let k = 0; k < prop.count; k++) {
-        const source = (prop.start + k) * 3;
-        top = Math.max(top, propData.position[source + 1]);
-        reach = Math.max(reach, Math.hypot(propData.position[source], propData.position[source + 2]));
-        positions.setXYZ(prop.start + k, prop.x + propData.position[source] * size, y + propData.position[source + 1] * size, prop.z + propData.position[source + 2] * size);
-        propIds.setX(prop.start + k, facet.id);
-      }
-      if (size > 0) guards.push(facet.id, prop.x, y + top, prop.z, reach);
-    }
-    rig.guards = Float32Array.from(guards);
+    (positions.array as Float32Array).set(seating.props);
+    (propIds.array as Float32Array).set(seating.propIds);
     positions.needsUpdate = true;
     propIds.needsUpdate = true;
-    propGeometry.computeBoundingSphere();
+    propGeometry.boundingSphere = seating.propBounds.clone();
+    rig.guards = seating.guards;
     uniforms.rapids.value = family.key === "strip" ? 1 : 0;
   };
 
@@ -474,20 +507,24 @@ function Sheet({ sheepCount, hour }: { sheepCount: number; hour: Hour }) {
     seat(rig.family);
     flock.onFamilySwap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [grass, cell]);
+  }, [grass, sheets, seatings]);
 
   useEffect(
     () => () => {
-      for (const geometry of built.current.values()) {
-        geometry.terrain.dispose();
-        geometry.back.dispose();
-        geometry.river.dispose();
+      for (const sheet of sheets.values()) {
+        sheet.terrain.dispose();
+        sheet.back.dispose();
+        sheet.river.dispose();
       }
-      built.current.clear();
+    },
+    [sheets]
+  );
+  useEffect(
+    () => () => {
       grass.geometry.dispose();
       grass.dispose();
     },
-    [grass, cell]
+    [grass]
   );
 
   useEffect(
@@ -774,7 +811,7 @@ function Sheet({ sheepCount, hour }: { sheepCount: number; hour: Hour }) {
     axisYAttribute.needsUpdate = true;
   }, -2);
 
-  const initial = geometryFor(familyFor(rig.family.key));
+  const initial = sheets.get(rig.family.key)!;
 
   return (
     <>

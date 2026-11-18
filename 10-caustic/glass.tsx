@@ -1,13 +1,12 @@
 "use client";
 
 import { useFrame } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three/webgpu";
 import { dot, float, Fn, If, Loop, max, min, mix, normalize, reflect, refract, select, sign, step, uniform, uniformArray, vec3 } from "three/tsl";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import { sound, useBed } from "../shared/engine/sound";
-import { bend, Caustics, field, stillness, stir, landing, soften, sphereRoots, spectrum, Sun, through, toLevel, useSlide, type Tracer } from "./light";
-import { lightBearing } from "./compass";
+import { sound } from "../shared/engine/sound";
+import { bend, Caustics, field, stillness, stir, landing, soften, sphereRoots, spectrum, through, toLevel, useSlide, type Tracer } from "./light";
 import { suzanne, useSunView } from "./mesh";
 import { clearMaterial } from "./set";
 
@@ -114,6 +113,9 @@ const reach = (kind: GlassKind, p: Piece) => (kind === "blocks" ? p.size * 0.62 
 const rolls = (kind: GlassKind) => kind === "marbles" || kind === "orbs";
 
 const GLASS = 1.52;
+// The colour bands every piece's light is split into. Made once: a new list each render would build every grid of light
+// and its shaders again, on any change of setting.
+const BANDS = spectrum(3, 0.012);
 // How hard the table pulls things back towards its middle.
 const PULL = 1.6;
 
@@ -134,13 +136,13 @@ function throughBall(p: any, inside: any, c: any, r: any, n: any) {
   return { at: q, dir: bend(inside, normalize(c.sub(q)), n), ok: float(1) as any };
 }
 
-// `onReady` is told once the new pieces have drawn a few frames without a stall, so their shaders are built. A stall is
-// a frame of over a quarter of a second, well beyond a slow machine's ordinary frame.
-// `warming` builds a study out of sight, while the page first loads, so that its shaders are ready before it is ever
-// chosen: its pieces are hidden, its light adds nothing, and it makes no sound and brings no sun of its own.
-export function Glass({ kind, colourway = "mixed", onReady, warming = false }: { kind: GlassKind; colourway?: string; onReady?: () => void; warming?: boolean }) {
+// `active` is whether this study is the one on the table. Every study is built while the page first loads and kept; one
+// not chosen has its pieces hidden and its light adding nothing. At first it is warming: its light is still traced, to
+// nothing, so that every shader it needs is built behind the loader. Once that has drawn for a while without a stall (a
+// frame of over a quarter of a second) it rests, and does nothing at all each frame until it is chosen.
+export function Glass({ kind, colourway = "mixed", active }: { kind: GlassKind; colourway?: string; active: boolean }) {
   const set = SETS[kind];
-  useBed("hum", warming ? 0 : 0.05);
+  const [warming, setWarming] = useState(!active);
 
   const u = useMemo(() => {
     // Laid out in a sunflower spiral, so they start close together without touching.
@@ -151,6 +153,8 @@ export function Glass({ kind, colourway = "mixed", onReady, warming = false }: {
       return new THREE.Vector4(Math.cos(a) * r, rest(kind, p), Math.sin(a) * r, p.size);
     });
     return {
+      // Where each piece starts, to set it back there whenever the study is chosen again.
+      home: spots.map((spot) => spot.clone()),
       at: uniformArray(spots, "vec4"),
       // How each block is turned, and how tall each column stands.
       shape: uniformArray(
@@ -172,17 +176,28 @@ export function Glass({ kind, colourway = "mixed", onReady, warming = false }: {
     };
   }, [set, kind]);
 
+  const meshes = useRef<(THREE.Mesh | null)[]>([]);
+
+  // Chosen, a study is set out fresh, each piece back where it starts, still and unturned.
   // Blocks throw broad flat patches, which read best soft-edged; balls focus to points, which want to stay sharp.
   useEffect(() => {
+    if (!active) return;
+    (u.at.array as THREE.Vector4[]).forEach((s, i) => {
+      s.copy(u.home[i]);
+      u.velocity[i].set(0, 0);
+      u.was[i].set(Infinity, Infinity);
+      (u.shape.array[i] as THREE.Vector4).x = i * 1.3 + 0.4;
+      meshes.current[i]?.quaternion.identity();
+    });
+    u.held = -1;
     field.centre.value.set(0, 0);
     field.size.value = 3.6;
     soften.value = kind === "blocks" ? 0.016 : kind === "monkeys" ? 0.02 : kind === "columns" ? 0.008 : 0.005;
-  }, [kind]);
+    stir();
+  }, [kind, active, u]);
 
-  const meshes = useRef<(THREE.Mesh | null)[]>([]);
-
-  // For the monkeys, which have no formula: the sun's view of the glass, read by each ray.
-  const throughMesh = useSunView(meshes, kind === "monkeys" ? set.length : 0);
+  // For the monkeys, which have no formula: the sun's view of the glass, read by each ray, drawn only while their light is.
+  const throughMesh = useSunView(meshes, kind === "monkeys" ? set.length : 0, active || warming);
 
   // One grid of light for each piece, held close around it, so every piece gets the full detail: in, across and out
   // of it, taking on its colour.
@@ -354,6 +369,7 @@ export function Glass({ kind, colourway = "mixed", onReady, warming = false }: {
 
   useSlide({
     pick: (ray) => {
+      if (!active) return null;
       let found: { distance: number; point: THREE.Vector3; index: number } | null = null;
       (u.at.array as THREE.Vector4[]).forEach((s, index) => {
         const tall = set[index].tall ?? 0;
@@ -380,17 +396,16 @@ export function Glass({ kind, colourway = "mixed", onReady, warming = false }: {
     }
   });
 
-  // The sun's height is the study's; where it stands around the table is the compass's, read each frame.
-  const aim = useMemo(() => ({ current: { elevation: kind === "orbs" ? 36 : 30, azimuth: lightBearing.get() } }), [kind]);
   const settled = useRef(0);
   useFrame((_, delta) => {
-    // A study built ahead of time waits longer, as the loader draws hidden things only once it is warming up.
-    const enough = warming ? 40 : 4;
-    if (settled.current < enough) {
+    if (!active) {
+      if (!warming) return;
+      // Its light is traced every frame while it warms, as the map is otherwise only redrawn when something moves.
+      stir();
       settled.current = delta < 0.25 ? settled.current + 1 : 0;
-      if (settled.current === enough) onReady?.();
+      if (settled.current >= 40) setWarming(false);
+      return;
     }
-    aim.current.azimuth = lightBearing.get();
     const dt = Math.min(delta, 1 / 30);
     const pieces = u.at.array as THREE.Vector4[];
     const drag = rolls(kind) ? 0.9 : 4;
@@ -459,7 +474,7 @@ export function Glass({ kind, colourway = "mixed", onReady, warming = false }: {
         va.y -= (impulse / ma) * nz;
         vb.x += (impulse / mb) * nx;
         vb.y += (impulse / mb) * nz;
-        if (closing > 0.12 && u.knock <= 0 && !warming) {
+        if (closing > 0.12 && u.knock <= 0) {
           u.knock = 0.05;
           sound.play(kind === "blocks" || kind === "columns" || kind === "monkeys" ? "tinkle" : "click", { gain: Math.min(0.95, closing * 0.55), pitch: 1.2 + Math.random() * 0.4, size: 0.2 });
         }
@@ -468,13 +483,11 @@ export function Glass({ kind, colourway = "mixed", onReady, warming = false }: {
     // The light is worked out again once any piece has moved a millimetre from where it was when the light was last
     // worked out, or is in hand; otherwise the table counts towards stillness. Pieces resting against each other are
     // pulled gently together all the time and creep a fraction of a millimetre a frame, which the light need not follow.
-    if (!warming) {
-      const moved = pieces.some((s, i) => Math.abs(s.x - u.was[i].x) + Math.abs(s.z - u.was[i].y) > 1e-3);
-      if (moved || u.held >= 0) {
-        stir();
-        pieces.forEach((s, i) => u.was[i].set(s.x, s.z));
-      } else stillness.frames += 1;
-    }
+    const moved = pieces.some((s, i) => Math.abs(s.x - u.was[i].x) + Math.abs(s.z - u.was[i].y) > 1e-3);
+    if (moved || u.held >= 0) {
+      stir();
+      pieces.forEach((s, i) => u.was[i].set(s.x, s.z));
+    } else stillness.frames += 1;
     pieces.forEach((s, i) => {
       const mesh = meshes.current[i];
       if (!mesh) return;
@@ -493,22 +506,25 @@ export function Glass({ kind, colourway = "mixed", onReady, warming = false }: {
     });
   });
 
+  // Where each grid of light is held: made once, as the grids are built from it.
+  const centres = useMemo(() => set.map((piece, i) => (u.at.element(i) as any).xyz.add(vec3(0, (piece.tall ?? 0) / 2, 0))), [set, u]);
+
   return (
     <>
-      {warming ? null : <Sun elevation={aim.current.elevation} azimuth={aim.current.azimuth} follow={aim} colour="#ffd6a3" power={6} reach={2.4} pool={1.7} />}
       {set.map((_, i) => (
-        <mesh key={i} ref={(mesh) => void (meshes.current[i] = mesh)} geometry={looks.geometries[i]} material={looks.materials[i]} castShadow visible={!warming} />
+        <mesh key={i} ref={(mesh) => void (meshes.current[i] = mesh)} geometry={looks.geometries[i]} material={looks.materials[i]} castShadow visible={active} />
       ))}
       {set.map((piece, i) => (
         <Caustics
           key={i}
           trace={traces[i]}
-          centre={(u.at.element(i) as any).xyz.add(vec3(0, (piece.tall ?? 0) / 2, 0))}
+          centre={centres[i]}
           span={kind === "columns" ? (piece.size * 2 + (piece.tall ?? 0)) * 1.1 : piece.size * (kind === "blocks" ? 1.9 : kind === "monkeys" ? 3.2 : 2.15)}
-          bands={spectrum(3, 0.012)}
+          bands={BANDS}
           detail={kind === "marbles" ? 150 : kind === "monkeys" ? 210 : 230}
           strength={kind === "monkeys" ? 3 : 1}
-          quiet={warming}
+          quiet={!active}
+          shown={active || warming}
           limit={kind === "blocks" ? 12 : kind === "columns" ? 40 : 60}
           fixed
         />

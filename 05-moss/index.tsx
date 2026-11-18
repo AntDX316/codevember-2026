@@ -44,7 +44,7 @@ import { useGrabRigidBody } from "../shared/engine/physics";
 import { airTint, focusBlur } from "../shared/engine/Post";
 import { scenePhase, useQuality } from "../shared/engine/quality";
 import { useSetting, useSettingRef, useSettingsStore } from "../shared/engine/settings";
-import { KeyLight, StudioEnvironment } from "../shared/engine/studio";
+import { KeyLight } from "../shared/engine/studio";
 import { useLook } from "../shared/engine/Stage";
 import type { DayDefinition, Look } from "../shared/engine/types";
 import { useMossAssets, type MossAssets } from "./assets";
@@ -55,7 +55,7 @@ import { Grit, Pebbles } from "./pebbles";
 import { Brush, holdingSpot } from "./plants";
 import { buildPools, createWater, NOT_REFLECTED, ONLY_REFLECTED, type WaterLook } from "./pools";
 import { bakeMoss, bugMaterial, mossBed, MossFibers, StoneBugs, stoneFibreGeometry, stoneFibreMaterial, type MossBake } from "./fibers";
-import { hoverBody, makeHover, pushers } from "./hover";
+import { GRAVITY_SPREAD, hoverBody, makeHover, pushers } from "./hover";
 import { Rain, Splashes } from "./rain";
 import { Valley } from "./valley";
 import { lehmer } from "../shared/engine/random";
@@ -615,6 +615,8 @@ function Stone({ spec, materials, shells, sprigs, gravity, quality }: { spec: St
   // Moss grows on whatever faces up now, and dies back slowly on whatever has been turned under.
   const heldGravity = useRef(1);
   const rouse = useRef(0);
+  // Its turn among the frames for taking up a change of gravity, so the stones do not all take it in the same one.
+  const frame = useRef(spec.seed);
   const pusher = useMemo(() => ({ x: 0, y: 0, z: 0, reach: built.radius + 0.5 }), [built]);
   useEffect(() => () => void pushers.delete(pusher), [pusher]);
   const floating = useMemo(() => {
@@ -629,7 +631,7 @@ function Stone({ spec, materials, shells, sprigs, gravity, quality }: { spec: St
     const rigid = body.current;
     if (!rigid) return;
     // The slider, down through zero and into reverse, where the stone stops being moved by gravity at all and hovers.
-    if (gravity.current !== heldGravity.current) {
+    if (frame.current++ % GRAVITY_SPREAD === 0 && gravity.current !== heldGravity.current) {
       heldGravity.current = gravity.current;
       rigid.setGravityScale(Math.max(0, gravity.current), true);
       if (gravity.current >= 0) floating.ceiling = null;
@@ -639,13 +641,15 @@ function Stone({ spec, materials, shells, sprigs, gravity, quality }: { spec: St
     }
     // A sleeping rock can drop straight back off, even when woken, so it keeps being woken and is given a nudge the new way.
     rouse.current = Math.max(0, rouse.current - rawDelta);
-    if (rouse.current > 0 && gravity.current > 0 && rigid.isSleeping()) {
+    // From here on it goes by the gravity it has taken up, which is the slider's within a few frames.
+    const g = heldGravity.current;
+    if (rouse.current > 0 && g > 0 && rigid.isSleeping()) {
       rigid.wakeUp();
       rigid.applyImpulse({ x: 0, y: -rigid.mass() * 0.08, z: 0 }, true);
     }
-    if (gravity.current < 0 && !grab.current.held) hoverBody(rigid, floating, gravity.current, performance.now() / 1000);
+    if (g < 0 && !grab.current.held) hoverBody(rigid, floating, g, performance.now() / 1000);
     // Moving, it can hit small rocks that have come to rest in the air, so it wakes them as it comes.
-    if (gravity.current < 0) {
+    if (g < 0) {
       const v = rigid.linvel();
       const at = rigid.translation();
       if (v.x * v.x + v.y * v.y + v.z * v.z > 0.04) {
@@ -1209,6 +1213,62 @@ function GravityIntro() {
   return null;
 }
 
+// The studio light each hour reflects, the same small room the engine's StudioEnvironment renders: a soft panel overhead
+// and a lamp where the sun is. All four are filtered while the page loads, because filtering one is a long piece of GPU
+// work that held the frame on every change of hour. The scene reads them through one texture node, and a change of hour
+// only points that node at another of them, which is a binding and not a rebuild of every lit material.
+function HourEnvironment({ hour }: { hour: string }) {
+  const gl = useThree((state) => state.gl) as unknown as THREE.WebGPURenderer;
+  const scene = useThree((state) => state.scene);
+  const lights = useRef<{ targets: Record<string, THREE.RenderTarget>; node: any } | null>(null);
+  const shown = useRef(hour);
+  shown.current = hour;
+
+  // Built in an effect rather than a memo, so that React's dev mode, which runs memos twice, leaves no stray targets.
+  useEffect(() => {
+    const generator = new THREE.PMREMGenerator(gl as any);
+    const unit = new THREE.BoxGeometry(1, 1, 1);
+    const targets: Record<string, THREE.RenderTarget> = {};
+    for (const [key, light] of Object.entries(HOURS)) {
+      const room = new THREE.Scene();
+      room.background = new THREE.Color(light.ambient);
+      const [x, y, z] = light.sky.sunDirection;
+      const boxes: { position: [number, number, number]; scale: [number, number, number]; color: string; intensity: number }[] = [
+        { position: [0, 11, 0], scale: [22, 0.2, 22], color: light.fill, intensity: 2.6 },
+        { position: [x * 12, y * 12 + 2, z * 12], scale: [4, 4, 4], color: light.light, intensity: 5 }
+      ];
+      const materials = boxes.map((box) => {
+        const material = new THREE.MeshBasicMaterial({ color: new THREE.Color(box.color).multiplyScalar(box.intensity) });
+        const mesh = new THREE.Mesh(unit, material);
+        mesh.position.set(...box.position);
+        mesh.scale.set(...box.scale);
+        room.add(mesh);
+        return material;
+      });
+      targets[key] = generator.fromScene(room, 0.02, 0.1, 100);
+      materials.forEach((material) => material.dispose());
+    }
+    unit.dispose();
+    generator.dispose();
+    const node = texture((targets[shown.current] ?? targets.dusk).texture) as any;
+    lights.current = { targets, node };
+    scene.environmentNode = node;
+    scene.environmentIntensity = 1.7;
+    return () => {
+      if (scene.environmentNode === node) scene.environmentNode = null;
+      Object.values(targets).forEach((target) => target.dispose());
+      lights.current = null;
+    };
+  }, [gl, scene]);
+
+  useEffect(() => {
+    const built = lights.current;
+    if (built) built.node.value = (built.targets[hour] ?? built.targets.dusk).texture;
+  }, [hour]);
+
+  return null;
+}
+
 function Scene() {
   const { tier } = useQuality();
   const hourKey = useSetting<string>("hour");
@@ -1229,15 +1289,7 @@ function Scene() {
       <LongView />
       <GravityIntro />
       <SkyDome palette={hour.sky} radius={2900} />
-      <StudioEnvironment
-        key={hourKey}
-        ambient={hour.ambient}
-        intensity={1.7}
-        boxes={[
-          { position: [0, 11, 0], scale: [22, 0.2, 22], color: hour.fill, intensity: 2.6 },
-          { position: [hour.sky.sunDirection[0] * 12, hour.sky.sunDirection[1] * 12 + 2, hour.sky.sunDirection[2] * 12], scale: [4, 4, 4], color: hour.light, intensity: 5 }
-        ]}
-      />
+      <HourEnvironment hour={hourKey} />
       <KeyLight position={position} target={[0, 0.5, 0]} color={hour.light} intensity={hour.intensity} angle={0.42} penumbra={0.5} shadowFar={110} />
       <Valley tile={tile} light={valleyLight} trees={tier === "high" ? 11000 : tier === "medium" ? 6000 : 2200} />
       <Plants extra={tier === "high" ? 30 : tier === "medium" ? 16 : 6} saplingCount={tier === "high" ? 150 : tier === "medium" ? 80 : 24} />

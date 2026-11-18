@@ -27,6 +27,11 @@ import { useQuality } from "./quality";
 
 type SoftBox = { position: [number, number, number]; scale: [number, number, number]; color: string; intensity: number };
 
+// One generator and one target for every studio light a renderer shows, so changing it (a day's hour, its sky) only
+// re-renders the room: a new generator compiles its shaders again, and a new texture makes every lit material rebuild its
+// lighting, which held a frame up for a fifth of a second or more on each change.
+const shared = new WeakMap<object, { generator: THREE.PMREMGenerator; target: THREE.RenderTarget | null }>();
+
 // Image-based light from a small procedural studio, so premium materials have something to reflect.
 export function StudioEnvironment({ boxes, ambient = "#101218", intensity = 1 }: { boxes: SoftBox[]; ambient?: string; intensity?: number }) {
   const gl = useThree((state) => state.gl) as unknown as THREE.WebGPURenderer;
@@ -46,16 +51,20 @@ export function StudioEnvironment({ boxes, ambient = "#101218", intensity = 1 }:
       return material;
     });
 
-    const generator = new THREE.PMREMGenerator(gl as any);
+    let own = shared.get(gl);
+    if (!own) {
+      own = { generator: new THREE.PMREMGenerator(gl as any), target: null };
+      shared.set(gl, own);
+    }
     // The renderer has finished init by the time a scene mounts, so this runs synchronously.
-    target = generator.fromScene(room, 0.02);
+    target = own.generator.fromScene(room, 0.02, 0.1, 100, (own.target ? { renderTarget: own.target } : {}) as any);
+    own.target = target;
     scene.environment = target.texture;
     scene.environmentIntensity = intensity;
 
     return () => {
-      scene.environment = null;
-      target?.dispose();
-      generator.dispose();
+      // The target stays for the next studio light; only this one's room goes.
+      if (scene.environment === target?.texture) scene.environment = null;
       unit.dispose();
       materials.forEach((material) => material.dispose());
     };

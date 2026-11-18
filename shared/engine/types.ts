@@ -19,12 +19,16 @@ export type ToggleSetting = {
   value: boolean;
   // A choice between two named states, shown either side of the switch instead of the label: off, then on.
   sides?: [string, string];
+  // On a phone, a round button with this icon instead of a pill with words: pressing it turns the setting on, and the
+  // button fades away while it is on, or while the setting named by showWhile is false.
+  icon?: "pause";
+  showWhile?: string;
 };
 
 export type ChoiceSetting = {
   type: "choice";
   label: string;
-  options: { value: string; label: string; swatch?: string[] }[];
+  options: { value: string; label: string; swatch?: string[]; short?: string }[];
   value: string;
   // What pressing the option already chosen goes back to. Without this, it does nothing.
   pressAgain?: string;
@@ -48,7 +52,13 @@ export type ColourSetting = {
 // for every choice but that one.
 export type OverviewSection = { title: string; points: string[] };
 
-export type Setting = (RangeSetting | ToggleSetting | ChoiceSetting | ActionSetting | ColourSetting) & { when?: { setting: string; is: string | boolean } | { setting: string; not: string | boolean } };
+// short: a label for the phone dock, where space is tight.
+export type Setting = (RangeSetting | ToggleSetting | ChoiceSetting | ActionSetting | ColourSetting) & {
+  when?: { setting: string; is: string | boolean } | { setting: string; not: string | boolean };
+  short?: string;
+  // State the scene publishes for the HUD to follow, never drawn as a control.
+  hidden?: boolean;
+};
 export type SettingsSchema = Record<string, Setting>;
 export type SettingValue = number | boolean | string;
 
@@ -111,6 +121,11 @@ export type DayDefinition = {
   extents?: Extents;
   // The settings that get their own pills on a phone, down the right of the screen. The panel holds the rest.
   phonePills?: string[];
+  // The settings laid out in a dock along the bottom of a phone, full controls rather than pills: sliders side by side,
+  // choices as a row of chips. For a day played with its settings, not only tuned.
+  phoneDock?: string[];
+  // Pills that ride on the dock's top right corner, just above it, within a thumb's reach.
+  phoneDockPills?: string[];
   // Auto will not go below this. For a day whose whole point is lost on a lower tier.
   autoFloor?: QualityTier;
   // The most pixels per CSS pixel the day draws at, for scenes too heavy to shade at a retina screen's full density.

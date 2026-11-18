@@ -13,67 +13,60 @@ import { mulberry32, type Web } from "./web";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- TSL's node types do not model every operator. */
 
+export type Drop = {
+  seg: number;
+  t: number;
+  r: number;
+  grow: number;
+  falling: boolean;
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  wait: number;
+};
+
+// How many drops each tier can hang on a web.
+export const dewCap = (tier: QualityTier) => (tier === "high" ? 2400 : tier === "medium" ? 1500 : 650);
+
+// Strings a new web with its dew and weighs it down by it, ready to be settled under the weight before it is seen, so
+// nothing shifts and shakes the drops off. Done along with the web itself, in the background, ahead of being needed.
+export function bead(web: Web, look: Look, cap: number, seed: number) {
+  const random = mulberry32(seed * 7 + 3);
+  const list: Drop[] = [];
+  const p = web.position;
+  const lengths = web.spiral.map((s) => {
+    const seg = web.segments[s];
+    return Math.hypot(p[seg.b * 3] - p[seg.a * 3], p[seg.b * 3 + 1] - p[seg.a * 3 + 1]);
+  });
+  const total = lengths.reduce((a, b) => a + b, 0);
+  const want = Math.min(cap, Math.round(total * look.dew));
+  const [small, big] = look.dropSize;
+  for (let n = 0; n < want; n++) {
+    const k = Math.floor(random() * web.spiral.length);
+    // Many small ones and a few big, as dew gathers.
+    const r = small + (big - small) * random() ** 3;
+    list.push({ seg: web.spiral[k], t: 0.1 + random() * 0.8, r, grow: 1, falling: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, wait: 0 });
+  }
+  web.load.fill(0);
+  for (const d of list) {
+    const seg = web.segments[d.seg];
+    web.load[seg.a] += d.r ** 3 * (1 - d.t);
+    web.load[seg.b] += d.r ** 3 * d.t;
+  }
+  web.weigh();
+  return list;
+}
+
 // Beads of dew strung along the sticky spiral. Each is a tiny ball lens: through it the garden behind shows small and
 // upside down, its rim mirrors the sky, and where it lines up with the sun it gathers the light into a point that
 // burns. Their weight drags the web down where they hang thickest. Shake the web hard enough and they let go and fall;
-// in time new ones gather.
-export function Dew({ web, look, tier, seed, active }: { web: Web; look: Look; tier: QualityTier; seed: number; active: boolean }) {
-  const cap = tier === "high" ? 2400 : tier === "medium" ? 1500 : 650;
-  const drops = useMemo(() => {
-    const random = mulberry32(seed * 7 + 3);
-    const list: {
-      seg: number;
-      t: number;
-      r: number;
-      grow: number;
-      falling: boolean;
-      x: number;
-      y: number;
-      z: number;
-      vx: number;
-      vy: number;
-      vz: number;
-      wait: number;
-    }[] = [];
-    const p = web.position;
-    const lengths = web.spiral.map((s) => {
-      const seg = web.segments[s];
-      return Math.hypot(p[seg.b * 3] - p[seg.a * 3], p[seg.b * 3 + 1] - p[seg.a * 3 + 1]);
-    });
-    const total = lengths.reduce((a, b) => a + b, 0);
-    const want = Math.min(cap, Math.round(total * look.dew));
-    const [small, big] = look.dropSize;
-    for (let n = 0; n < want; n++) {
-      const k = Math.floor(random() * web.spiral.length);
-      // Many small ones and a few big, as dew gathers.
-      const r = small + (big - small) * random() ** 3;
-      list.push({
-        seg: web.spiral[k],
-        t: 0.1 + random() * 0.8,
-        r,
-        grow: 1,
-        falling: false,
-        x: 0,
-        y: 0,
-        z: 0,
-        vx: 0,
-        vy: 0,
-        vz: 0,
-        wait: 0,
-      });
-    }
-    // Weighed down by its dew and settled under it before it is seen, so nothing shifts and shakes the drops off.
-    web.load.fill(0);
-    for (const d of list) {
-      const seg = web.segments[d.seg];
-      web.load[seg.a] += d.r ** 3 * (1 - d.t);
-      web.load[seg.b] += d.r ** 3 * d.t;
-    }
-    web.weigh();
-    web.settle();
-    return list;
-  }, [web, look, cap, seed]);
-
+// in time new ones gather. One mesh with room for as many as the tier allows, made once: a new web only changes how
+// many are drawn and where, so spinning one builds nothing.
+export function Dew({ web, drops, look, tier, active }: { web: Web; drops: Drop[]; look: Look; tier: QualityTier; active: boolean }) {
+  const cap = dewCap(tier);
   const { mesh, material } = useMemo(() => {
     const geometry = new THREE.IcosahedronGeometry(1, tier === "low" ? 2 : 3);
     const material = new THREE.MeshBasicNodeMaterial();
@@ -96,12 +89,10 @@ export function Dew({ web, look, tier, seed, active }: { web: Web; look: Look; t
       rgb = rgb.add(sky.light.mul(sky.power).mul(focus.add(glance)));
       return vec4(rgb.add(vec3(1, 1, 1).mul(sky.flash.mul(0.5))), 1);
     })() as any;
-    const mesh = new THREE.InstancedMesh(geometry, material, Math.max(1, drops.length));
+    const mesh = new THREE.InstancedMesh(geometry, material, cap);
     mesh.frustumCulled = false;
-    mesh.count = drops.length;
-    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     return { mesh, material };
-  }, [tier, drops]);
+  }, [tier, cap]);
   useDispose(mesh.geometry, material);
 
   const scratch = useMemo(
@@ -117,6 +108,7 @@ export function Dew({ web, look, tier, seed, active }: { web: Web; look: Look; t
   const lastDrip = useRef(0);
 
   useFrame((_, rawDelta) => {
+    mesh.count = drops.length;
     if (!active) return;
     const delta = Math.min(rawDelta, 1 / 20);
     const p = web.position;
@@ -193,6 +185,10 @@ export function Dew({ web, look, tier, seed, active }: { web: Web; look: Look; t
       mesh.setMatrixAt(i, matrix.compose(at, quiet, scale));
     }
     if (reweigh) web.weigh();
+    // Rewritten every frame, but only as far as the drops: left at the usual usage and given the range, so that three
+    // uploads just that, once, rather than the whole buffer for every pass, as it does for one marked dynamic.
+    mesh.instanceMatrix.clearUpdateRanges();
+    mesh.instanceMatrix.addUpdateRange(0, drops.length * 16);
     mesh.instanceMatrix.needsUpdate = true;
   });
 

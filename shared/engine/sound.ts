@@ -110,6 +110,12 @@ class SoundEngine {
     // Phones only allow audio to start as a tap ends, and desktops as a press begins, so this listens for both.
     const wake = () => this.wake();
     for (const event of ["pointerdown", "pointerup", "touchend", "click", "keydown"]) window.addEventListener(event, wake, { capture: true });
+    // Build the audio context and its noises while the page loads, still asleep, so the first press only has to wake
+    // it: made on the press, they held up that frame by close to half a second.
+    const prepare = () => this.create();
+    const idle = (window as unknown as { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => void }).requestIdleCallback;
+    if (idle) idle(prepare, { timeout: 2000 });
+    else window.setTimeout(prepare, 500);
     document.addEventListener("visibilitychange", () => {
       if (!this.context) return;
       if (document.hidden) {
@@ -122,17 +128,31 @@ class SoundEngine {
     });
   }
 
+  private woken = false;
+
   private wake() {
-    if (this.context) this.prime();
-    if (this.context) {
+    if (this.woken && this.context) {
+      this.prime();
       // Not only "suspended": iOS also has "interrupted", after a call or a trip to the home screen.
       if (this.context.state !== "running" && !document.hidden) void this.context.resume();
       // Any press is another chance, if the browser refused to start the music earlier.
       this.startMusic();
       return;
     }
+    if (!this.create()) return;
+    this.woken = true;
+    void this.context!.resume();
+    this.changedState();
+    for (const bed of this.beds) bed.start();
+    this.prime();
+    this.startMusic();
+  }
+
+  // The context, its master gain and limiter, and the noises the sounds are made from; asleep until a press wakes it.
+  private create() {
+    if (this.context) return true;
     const Context = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!Context) return;
+    if (!Context) return false;
     // On an iPhone, sound made this way is silenced by the ring switch unless it asks to be played like media.
     try {
       const session = (navigator as unknown as { audioSession?: { type: string } }).audioSession;
@@ -142,8 +162,6 @@ class SoundEngine {
     }
     this.context = new Context();
     this.context.onstatechange = () => this.changedState();
-    void this.context.resume();
-    this.changedState();
     this.master = this.context.createGain();
     this.master.gain.value = this.muted ? 0 : 0.8;
     // A gentle limiter, so that a pile of impacts at once never clips.
@@ -152,9 +170,8 @@ class SoundEngine {
     limiter.ratio.value = 8;
     this.master.connect(limiter);
     limiter.connect(this.context.destination);
-    for (const bed of this.beds) bed.start();
-    this.prime();
-    this.startMusic();
+    for (const colour of ["white", "pink", "brown"] as const) this.noise(colour);
+    return true;
   }
 
   // Plays a moment of silence from the first press, if no track has been asked for yet, so that a track asked for

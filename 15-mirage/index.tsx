@@ -10,6 +10,7 @@ import { useQuality } from "../shared/engine/quality";
 import { useSetting, useSettingAction } from "../shared/engine/settings";
 import { sound, useBed, useEvery, useMusic } from "../shared/engine/sound";
 import { useLook } from "../shared/engine/Stage";
+import { useUnwind } from "../shared/engine/unwind";
 import type { DayDefinition } from "../shared/engine/types";
 import { createDesert, homeAt, PATCH } from "./desert";
 import { Animals, type Life } from "./animals";
@@ -64,6 +65,8 @@ const DETAIL = {
 };
 // Seconds of turning sand to water it takes for the desert to become an oasis.
 const PARADISE = 45;
+// Seconds to dry back to the dunes when asked to unwind.
+const RECEDE = 2.2;
 
 // Where a ray first meets the dunes anywhere, stepping along it in growing strides; null if it reaches the sky.
 function onDunes(ray: THREE.Ray) {
@@ -152,6 +155,12 @@ function Scene() {
     desert.reset();
     oasis.current = 0;
   }, [desert, resets]);
+  // Asked to unwind, the oasis dries back to the dunes over a couple of seconds, then the desert is laid out afresh.
+  const receding = useRef<number | null>(null);
+  useUnwind(() => {
+    receding.current = performance.now() / 1000;
+    return RECEDE + 0.2;
+  });
 
   useLook(useMemo(() => ({ ...LOOK, exposure: look.exposure, bloom: look.bloom }), [look]));
   const first = useRef(true);
@@ -312,6 +321,16 @@ function Scene() {
     // deep; and how far dry sand drifts back toward the dunes.
     // The oasis: water lasts longer, moisture reaches further, and everything grows faster the further it has come.
     if (h.held) oasis.current = Math.min(1, oasis.current + delta / PARADISE);
+    if (receding.current !== null) {
+      const done = performance.now() / 1000 - receding.current >= RECEDE;
+      u.recede.value = done ? 0 : 1 - Math.exp(-delta * 3.5);
+      oasis.current *= 1 - u.recede.value;
+      if (done) {
+        receding.current = null;
+        desert.reset();
+        oasis.current = 0;
+      }
+    }
     const o = oasis.current;
     life.current.oasis = o;
     world.oasis.value = o;

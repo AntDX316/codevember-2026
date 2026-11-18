@@ -91,7 +91,8 @@ function Scene() {
       <Hedge study={study} />
       <Walk on={walk} solids={hedgeSolids} steps={FOOTSTEPS[style]} fov={85} />
       <Styled />
-      {playing ? <Coins /> : null}
+      {/* Always there, hidden while not playing, so that starting a game builds nothing. */}
+      <Coins playing={playing} />
     </>
   );
 }

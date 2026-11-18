@@ -409,6 +409,17 @@ export function familyFor(key: FamilyKey): Family {
   return family;
 }
 
+// The facet of a family under a point of the flat sheet, or -1. A hint is tried first.
+export function locateIn(family: Family, x: number, z: number, hint = -1) {
+  const { facets, lookup } = family;
+  if (hint >= 0 && hint < facets.length && facetContains(facets[hint], x, z)) return hint;
+  const gx = Math.min(GRID_X - 1, Math.max(0, Math.floor(((x + W) / (2 * W)) * GRID_X)));
+  const gz = Math.min(GRID_Z - 1, Math.max(0, Math.floor(((z + D) / (2 * D)) * GRID_Z)));
+  const cell = lookup[gz * GRID_X + gx];
+  for (let i = 0; i < cell.length; i++) if (facetContains(facets[cell[i]], x, z)) return cell[i];
+  return -1;
+}
+
 type Hit = { facet: number; t: number; x: number; z: number; land: boolean };
 
 // All of the fold's state. Scenes read matrices and ask questions; this owns the pose.
@@ -841,13 +852,7 @@ export class FoldRig {
   }
 
   locate(x: number, z: number, hint = -1) {
-    const { facets, lookup } = this.family;
-    if (hint >= 0 && hint < facets.length && facetContains(facets[hint], x, z)) return hint;
-    const gx = Math.min(GRID_X - 1, Math.max(0, Math.floor(((x + W) / (2 * W)) * GRID_X)));
-    const gz = Math.min(GRID_Z - 1, Math.max(0, Math.floor(((z + D) / (2 * D)) * GRID_Z)));
-    const cell = lookup[gz * GRID_X + gx];
-    for (let i = 0; i < cell.length; i++) if (facetContains(facets[cell[i]], x, z)) return cell[i];
-    return -1;
+    return locateIn(this.family, x, z, hint);
   }
 
   // The first facet along a ray, by its flat polygon.

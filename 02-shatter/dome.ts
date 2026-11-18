@@ -97,11 +97,18 @@ export function buildDome(count: number) {
       [1, -1]
     ].map(([u, v]) => site.clone().addScaledVector(tangent, u * size).addScaledVector(bitangent, v * size));
 
-    const near = sites
-      .filter((other) => other !== site)
-      .map((other) => ({ other, dot: other.dot(site) }))
-      .sort((p, q) => q.dot - p.dot)
-      .slice(0, 44);
+    // The 44 nearest sites, nearest first, ties in site order: exactly what a stable sort of them all gives, without
+    // sorting every site for every site. Every sky size is cut while the page loads, so this has to be quick.
+    const near: { other: THREE.Vector3; dot: number }[] = [];
+    for (const other of sites) {
+      if (other === site) continue;
+      const dot = other.dot(site);
+      if (near.length === 44 && dot <= near[43].dot) continue;
+      let at = near.length;
+      while (at > 0 && near[at - 1].dot < dot) at--;
+      near.splice(at, 0, { other, dot });
+      if (near.length > 44) near.pop();
+    }
 
     const clip = (plane: THREE.Vector3, offset = 0) => {
       const next: THREE.Vector3[] = [];
@@ -169,29 +176,94 @@ export function buildDome(count: number) {
   geometry.setAttribute("aShard", new THREE.BufferAttribute(new Float32Array(shardId), 1));
   geometry.setAttribute("aDirection", new THREE.BufferAttribute(new Float32Array(direction), 3));
   geometry.setAttribute("aFace", new THREE.BufferAttribute(new Float32Array(face), 1));
+  // Measured now, while the page loads, rather than on the first frame a size change draws it.
+  geometry.computeBoundingSphere();
   return { geometry, shards };
 }
 
-// Which plate covers each texel of a latitude-longitude map, so the lake can reflect the holes.
+// Which plate covers each texel of a latitude-longitude map, so the lake can reflect the holes, and the texels of each
+// plate as one list (plate i owns pixels[start[i]] up to pixels[start[i + 1]]), so a plate opens its hole without
+// searching the whole map.
 export function buildCellMap(shards: Shard[], width: number, height: number) {
   const cells = new Int16Array(width * height);
-  const dir = new THREE.Vector3();
+  const n = shards.length;
+  // Plates sorted into a coarse latitude-longitude grid. The last texel's plate nearly always covers this one too,
+  // and the true nearest can be no further off than it, so only the grid squares within that angle are searched.
+  // Every sky size is cut while the page loads, so a search of every plate for every texel costs too much. Ties
+  // still go to the lowest plate, as that full search would give.
+  const LAT_BINS = 32;
+  const LON_BINS = 64;
+  const dx = new Float64Array(n);
+  const dy = new Float64Array(n);
+  const dz = new Float64Array(n);
+  const latBin = (lat: number) => Math.min(LAT_BINS - 1, Math.max(0, Math.floor(((lat + Math.PI / 2) / Math.PI) * LAT_BINS)));
+  const lonBin = (lon: number) => Math.floor(((lon + Math.PI) / (Math.PI * 2)) * LON_BINS);
+  const binOf = new Int32Array(n);
+  const bucketStart = new Int32Array(LAT_BINS * LON_BINS + 1);
+  const rowFilled = new Int32Array(LAT_BINS);
+  shards.forEach(({ direction: { x, y, z } }, s) => {
+    dx[s] = x;
+    dy[s] = y;
+    dz[s] = z;
+    const row = latBin(Math.asin(Math.max(-1, Math.min(1, y))));
+    binOf[s] = row * LON_BINS + Math.min(LON_BINS - 1, Math.max(0, lonBin(Math.atan2(z, x))));
+    bucketStart[binOf[s] + 1]++;
+    rowFilled[row]++;
+  });
+  for (let b = 0; b < LAT_BINS * LON_BINS; b++) bucketStart[b + 1] += bucketStart[b];
+  const bucketed = new Int32Array(n);
+  const place = bucketStart.slice(0, LAT_BINS * LON_BINS);
+  for (let s = 0; s < n; s++) bucketed[place[binOf[s]]++] = s;
+
+  const lonCos = new Float64Array(width);
+  const lonSin = new Float64Array(width);
+  for (let x = 0; x < width; x++) {
+    const lon = ((x + 0.5) / width - 0.5) * Math.PI * 2;
+    lonCos[x] = Math.cos(lon);
+    lonSin[x] = Math.sin(lon);
+  }
+  let seed = 0;
   for (let y = 0; y < height; y++) {
     const lat = ((y + 0.5) / height - 0.5) * Math.PI;
+    const latCos = Math.cos(lat);
+    const py = Math.sin(lat);
+    let previous = seed;
     for (let x = 0; x < width; x++) {
       const lon = ((x + 0.5) / width - 0.5) * Math.PI * 2;
-      dir.set(Math.cos(lat) * Math.cos(lon), Math.sin(lat), Math.cos(lat) * Math.sin(lon));
-      let best = 0;
-      let bestDot = -2;
-      for (let s = 0; s < shards.length; s++) {
-        const dot = shards[s].direction.dot(dir);
-        if (dot > bestDot) {
-          bestDot = dot;
-          best = s;
+      const px = latCos * lonCos[x];
+      const pz = latCos * lonSin[x];
+      let best = previous;
+      let bestDot = dx[best] * px + dy[best] * py + dz[best] * pz;
+      const reach = Math.acos(Math.min(1, bestDot)) + 1e-6;
+      const nearPole = lat + reach >= Math.PI / 2 || lat - reach <= -Math.PI / 2;
+      const across = nearPole ? Math.PI : Math.asin(Math.min(1, Math.sin(reach) / latCos));
+      const lonFrom = across >= Math.PI ? 0 : lonBin(lon - across);
+      const lonTo = across >= Math.PI ? LON_BINS - 1 : Math.min(lonFrom + LON_BINS - 1, lonBin(lon + across));
+      for (let row = latBin(lat - reach), last = latBin(lat + reach); row <= last; row++) {
+        if (!rowFilled[row]) continue;
+        for (let column = lonFrom; column <= lonTo; column++) {
+          const bucket = row * LON_BINS + (((column % LON_BINS) + LON_BINS) % LON_BINS);
+          for (let k = bucketStart[bucket]; k < bucketStart[bucket + 1]; k++) {
+            const s = bucketed[k];
+            const dot = dx[s] * px + dy[s] * py + dz[s] * pz;
+            if (dot > bestDot || (dot === bestDot && s < best)) {
+              bestDot = dot;
+              best = s;
+            }
+          }
         }
       }
+      if (x === 0) seed = best;
+      previous = best;
       cells[y * width + x] = best;
     }
   }
-  return cells;
+
+  const start = new Int32Array(n + 1);
+  for (let i = 0; i < cells.length; i++) start[cells[i] + 1]++;
+  for (let s = 0; s < n; s++) start[s + 1] += start[s];
+  const pixels = new Int32Array(cells.length);
+  const fill = start.slice(0, n);
+  for (let i = 0; i < cells.length; i++) pixels[fill[cells[i]]++] = i;
+  return { cells, start, pixels };
 }

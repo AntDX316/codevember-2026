@@ -25,10 +25,10 @@ const LEAVES = { high: 480, medium: 260, low: 0 };
 type Slots = { matrix: THREE.InstancedBufferAttribute; rest: THREE.InstancedBufferAttribute; count: number; capacity: number };
 
 function slots(capacity: number): Slots {
+  // Rewritten every frame, but only as far as the slots in use: left at the usual usage, so that three uploads just the
+  // range `finish` marks. Marked dynamic, WebGPU's backend would send the whole buffer again for every pass drawn.
   const matrix = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 16), 16);
-  matrix.setUsage(THREE.DynamicDrawUsage);
   const rest = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
-  rest.setUsage(THREE.DynamicDrawUsage);
   return { matrix, rest, count: 0, capacity };
 }
 
@@ -67,6 +67,8 @@ function dressed(geometry: THREE.BufferGeometry, material: THREE.Material, on: S
   mesh.frustumCulled = false;
   mesh.receiveShadow = true;
   mesh.count = 0;
+  // The Tron maze's pieces are out of sight until styles.ts shows them.
+  mesh.visible = material.name !== "tech";
   return mesh;
 }
 

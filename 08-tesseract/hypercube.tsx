@@ -25,14 +25,18 @@ const HEART_GAP = 0.31;
 // Needles are steep, so a ray steps this much of the distance while among them.
 const NEEDLE_STEP = 0.2;
 
+const FORMS: FormName[] = ["urchin", "one", "heart", "rings"];
+
 // The tesseract's edges drawn on the 3-sphere and brought down by stereographic projection, so straight 4D edges arrive as circles.
 // Turning it carries the inner cube out through the outer one, and `Turning` picks the turns that keep the whole thing on screen.
+//
+// Every form is built during load, each its own shader, and changing form only shows one and hides the rest: building
+// a form's shader as it was picked stalled the page for up to half a second.
+
 export function Hypercube({ form }: { form: FormName }) {
-  const { tier } = useQuality();
   const speedKey = `${form}Speed`;
   const { time, pointer, stir } = usePulse("hum", 0.12, speedKey);
   const was = useRef({ x: 0, y: 0 });
-  const look = useFinish("cube", gooOf(form) ? 1 : 0.25);
   const speed = useSettingRef<number>(speedKey);
   const thicknesses = {
     one: useSettingRef<number>("cubeThickness"),
@@ -43,7 +47,8 @@ export function Hypercube({ form }: { form: FormName }) {
   const size = useSettingRef<number>(`${form}Size`);
   const turning = useMemo(() => new Turning(), []);
   const shape = useMemo(() => ({ thickness: uniform(1) as any, size: uniform(1.35) as any }), []);
-  const parts = useMemo(() => new Parts(form), [form]);
+  // Each form's moving parts, kept for the whole visit; only the form on show is worked out each frame.
+  const allParts = useMemo(() => Object.fromEntries(FORMS.map((name) => [name, new Parts(name)])) as Record<FormName, Parts>, []);
   useStudyView([3.5, 4.4, 17], CENTRE);
   // No screen-space occlusion: the shader works out its own, and the pass read the open sky as a floor, drawing a faint
   // line along the horizon and speckle under it.
@@ -58,10 +63,25 @@ export function Hypercube({ form }: { form: FormName }) {
     turning.lean[1] = -y * 0.55;
     const pace = speed.current * SPEED_UNIT;
     turning.update(Math.min(delta, 0.05), pace);
-    parts.update(Math.min(delta, 0.05), pace, size.current, turning.matrix.value);
+    // Here, straight after the turn, so the parts follow it in the same frame.
+    allParts[form].update(Math.min(delta, 0.05), pace, size.current, turning.matrix.value);
     shape.thickness.value = thicknesses[form].current * (1 + stir.value * 0.35);
     shape.size.value = size.current;
   });
+
+  return (
+    <>
+      {FORMS.map((name) => (
+        <FormShell key={name} form={name} shown={name === form} parts={allParts[name]} turning={turning} shape={shape} time={time} />
+      ))}
+    </>
+  );
+}
+
+// One form's shader on its own shell, built at load and shown only while it is the form picked.
+function FormShell({ form, shown, parts, turning, shape, time }: { form: FormName; shown: boolean; parts: Parts; turning: Turning; shape: { thickness: any; size: any }; time: any }) {
+  const { tier } = useQuality();
+  const look = useFinish("cube", gooOf(form) ? 1 : 0.25);
 
   // The extra parts ask much more of every step, so they take fewer.
   const crowded = form !== "one";
@@ -255,5 +275,5 @@ export function Hypercube({ form }: { form: FormName }) {
     [form, tier, parts, turning, shape, look, time, primary, bounce, shadows]
   );
 
-  return <MarchedShell material={material} />;
+  return <MarchedShell material={material} visible={shown} />;
 }

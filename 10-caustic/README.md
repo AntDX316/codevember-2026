@@ -17,7 +17,7 @@ Run it locally with `npm run dev` from the repo root, then open <http://localhos
 ### Rendering
 
 - R3F and three.js r187 on WebGPU, every surface a TSL node material; the glass is transmission with dispersion and thickness absorption.
-- Every study is built out of sight during first load, so its shaders are compiled before it is chosen.
+- Every study is built out of sight during first load and kept, so choosing one only changes which is shown.
 
 ### Caustics
 

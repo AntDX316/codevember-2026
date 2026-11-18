@@ -335,7 +335,9 @@ export function createDesert(N: number, sprays: number) {
     palmGrow: uniform(0.001),
     palmWither: uniform(0.0003),
     // How far, in metres, green carries out past the patch's edge.
-    spread: uniform(0.2)
+    spread: uniform(0.2),
+    // While drying back to the dunes, the part of the way taken each frame; 0 otherwise.
+    recede: uniform(0)
   };
 
   // A column's index from its place on the grid, kept on it.
@@ -536,6 +538,22 @@ export function createDesert(N: number, sprays: number) {
     const seedling = s.z.lessThan(0.02) as any;
     const growth = thriving.select(s.z.add(u.palmGrow), dying.and(seedling).select(s.z.sub(u.palmWither.mul(water.greaterThan(0.01).select(float(4), float(1)))), s.z)) as any;
     palms.element(instanceIndex).assign(vec4(s.xy, growth.clamp(0, 1), s.w));
+  })().compute(PALM_SITES);
+
+  // Drying back to the dunes in a moment, a part of the way each frame: the water draining away, the sand coming back to
+  // where the wind laid it, the green and the palms dying back. Only for unwinding (engine/unwind); the day never asks.
+  const recede = Fn(() => {
+    const id = int(instanceIndex);
+    const keep = float(1).sub(u.recede) as any;
+    const c = cells.element(id) as any;
+    cells.element(id).assign(vec4(mix(c.x, home.element(id), u.recede), c.y.mul(keep), c.z.mul(keep), c.w.mul(keep)));
+    flux.element(id).assign((flux.element(id) as any).mul(keep));
+    const l = life.element(id) as any;
+    life.element(id).assign(vec4(l.x.mul(keep), l.y.mul(keep), l.z, l.w));
+  })().compute(CELLS);
+  const recedePalms = Fn(() => {
+    const s = palms.element(instanceIndex) as any;
+    palms.element(instanceIndex).assign(vec4(s.xy, max(s.z.sub(u.recede.mul(1.5)), float(0)), s.w));
   })().compute(PALM_SITES);
 
   // The palms that have come up, listed each frame, so the shade below loops over those alone, not every site.
@@ -765,6 +783,7 @@ export function createDesert(N: number, sprays: number) {
   // Steps the desert on, then lights it, then runs whatever else is given, such as the passes that colour it.
   const step = (renderer: THREE.WebGPURenderer, steps: number, after: THREE.ComputeNode[] = []) => {
     const passes = [];
+    if (u.recede.value > 0) passes.push(recede, recedePalms);
     for (let k = 0; k < steps; k++) passes.push(flow, update, copy);
     passes.push(moisten, settle, sprout, clearGrown, frame, shadeOfPalms, shade, spray, ...after);
     renderer.compute(passes);

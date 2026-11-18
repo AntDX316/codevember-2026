@@ -1,19 +1,17 @@
 "use client";
 
 import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import { orbitPoint } from "../shared/engine/controls";
 import { focusBlur, focusDistance } from "../shared/engine/Post";
 import { useSetting } from "../shared/engine/settings";
-import { useQuality } from "../shared/engine/quality";
-import { useMusic } from "../shared/engine/sound";
+import { useBed, useMusic } from "../shared/engine/sound";
 import { StudioEnvironment } from "../shared/engine/studio";
 import type { DayDefinition } from "../shared/engine/types";
 import { COLOURWAYS, Glass, type GlassKind } from "./glass";
-import { CausticPass } from "./light";
+import { CausticPass, Sun } from "./light";
 import { Backdrop, Floor } from "./set";
-import { Compass } from "./compass";
-import { SwitchingBar, switching } from "./switching";
+import { Compass, lightBearing } from "./compass";
 
 // Studies of caustics: light bent by glass and gathered into bright colours where it lands.
 const STUDIES = [
@@ -35,29 +33,24 @@ function Focus() {
   return null;
 }
 
+// The sun's height is the study's; where it stands around the table is the compass's, read each frame.
+function Aim({ aim, elevation }: { aim: { current: { elevation: number; azimuth: number } }; elevation: number }) {
+  useFrame(() => {
+    aim.current.elevation = elevation;
+    aim.current.azimuth = lightBearing.get();
+  });
+  return null;
+}
+
 // A warm satin table in a pool of low sun, falling away into the dark.
 function Scene() {
   const study = useSetting<string>("study");
   const colourway = useSetting<string>("colourway");
-  // The study on the table. A new one is put out only once the loading bar has had a chance to show, as building it
-  // stalls the page.
-  const [shown, setShown] = useState(study);
-  // Every other study is built too while the page first loads, out of sight behind the loader, so that its shaders are
-  // ready and switching to it later is quick. Each is put away once it has drawn without stalling. Not Suzanne, whose
-  // light needs maps of her drawn from the sun and is the heaviest to build: she is built when chosen. And not on a
-  // phone at all: there several sets of glass and their light at once are more than it can hold.
-  const { tier } = useQuality();
-  const [warming, setWarming] = useState(() => (tier === "low" ? [] : STUDIES.map((s) => s.value).filter((value) => value !== study && value !== "monkeys")));
-  const warmed = (value: string) => setWarming((list) => list.filter((item) => item !== value));
-  useEffect(() => {
-    if (study === shown) return;
-    switching.start(STUDIES.find((s) => s.value === study)?.label ?? "the glass");
-    let frame = requestAnimationFrame(() => {
-      frame = requestAnimationFrame(() => setShown(study));
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [study, shown]);
   useMusic("/codevember/music/born-to-rise.mp3", 0.2);
+  useBed("hum", 0.05);
+  // One sun for every study, so that changing study never adds or takes away a light, which would rebuild every shader
+  // that is lit by it.
+  const aim = useMemo(() => ({ current: { elevation: 30, azimuth: lightBearing.get() } }), []);
   return (
     <>
       <Backdrop top="#1c1714" horizon="#0b0908" bottom={BACKGROUND} />
@@ -75,9 +68,12 @@ function Scene() {
       />
       <Floor albedo="#6a5a4c" background="#0b0908" grain={0.1} roughness={0.42} radius={6} />
       <CausticPass />
-      <Glass key={shown} kind={shown as GlassKind} colourway={colourway} onReady={switching.done} />
-      {warming.map((value) => (
-        <Glass key={`warm-${value}`} kind={value as GlassKind} warming onReady={() => warmed(value)} />
+      <Aim aim={aim} elevation={study === "orbs" ? 36 : 30} />
+      <Sun elevation={aim.current.elevation} azimuth={aim.current.azimuth} follow={aim} colour="#ffd6a3" power={6} reach={2.4} pool={1.7} />
+      {/* Every study is built while the page loads, Suzanne too, and kept: the one chosen shows, and the rest wait out of
+          sight, doing nothing, so changing study is only a change of which one shows. */}
+      {STUDIES.map(({ value }) => (
+        <Glass key={value} kind={value as GlassKind} colourway={colourway} active={value === study} />
       ))}
     </>
   );
@@ -100,19 +96,14 @@ const caustic: DayDefinition = {
     }
   },
   hint: "Drag the glass about to push the pieces around, and turn the dial to move the sun.",
-  Overlay: () => (
-    <>
-      <SwitchingBar />
-      <Compass />
-    </>
-  ),
+  Overlay: () => <Compass />,
   notes: "Coloured glass on a table in low sun, its light bent and gathered into bright colours on the wood.",
   overview: [
     {
       title: "Rendering",
       points: [
         "R3F and three.js r187 on WebGPU, every surface a TSL node material; the glass is transmission with dispersion and thickness absorption.",
-        "Every study is built out of sight during first load, so its shaders are compiled before it is chosen."
+        "Every study is built out of sight during first load and kept, so choosing one only changes which is shown."
       ]
     },
     {

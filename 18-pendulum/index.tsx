@@ -262,6 +262,7 @@ function Scene() {
     // Sound of the pour, and a drop now and then.
     const flowing = !pendulum.held && !pendulum.waiting && !pendulum.finished && !pendulum.paused && pendulum.level > 0 ? 1 : 0;
     done.set(pendulum.finished);
+    if (store.get("pouring") !== (flowing === 1)) store.set("pouring", flowing === 1);
     pour.current?.level(flowing * (0.05 + Math.min(0.06, pendulum.speed * 0.03)), 0.2);
     sinceDrop.current += delta;
     if (flowing && sinceDrop.current > 0.35 + Math.random() * 0.6) {
@@ -419,7 +420,8 @@ const pendulum: DayDefinition = {
     position: [-0.45, 1.45, -1.7],
     target: [0.05, 0.2, 0.2],
     fov: 44,
-    phone: { position: [-0.55, 2.05, -2.35], target: [0.05, 0.15, 0.25], fov: 58 }
+    // On a phone the eye and what it looks at are both a little lower, so the canvas rides up clear of the dock.
+    phone: { position: [-0.55, 1.83, -2.35], target: [0.05, -0.07, 0.25], fov: 58 }
   },
   hover: true,
   // Black behind: the overlay pass (window light) is added over the whole frame on top of the background's colour.
@@ -442,20 +444,24 @@ const pendulum: DayDefinition = {
       type: "choice",
       label: "Vessel",
       options: [
-        { value: "can", label: "Can · 1 hole" },
-        { value: "three", label: "Bucket · 3 holes" },
-        { value: "five", label: "Bucket · 5 holes" },
-        { value: "slot", label: "Bucket · slot" }
+        { value: "can", label: "Can · 1 hole", short: "Can" },
+        { value: "three", label: "Bucket · 3 holes", short: "3 holes" },
+        { value: "five", label: "Bucket · 5 holes", short: "5 holes" },
+        { value: "slot", label: "Bucket · slot", short: "Slot" }
       ],
       value: "can"
     },
-    spinSpeed: { type: "range", label: "Paint can spin speed", min: -1, max: 1, step: 0.01, value: 0, reset: 0, when: { setting: "vessel", not: "can" } },
-    turntable: { type: "range", label: "Canvas spin speed", min: -1, max: 1, step: 0.01, value: 0, reset: 0 },
-    paused: { type: "toggle", label: "Pause paint", value: false },
+    spinSpeed: { type: "range", label: "Paint can spin speed", short: "Can spin", min: -1, max: 1, step: 0.01, value: 0, reset: 0, when: { setting: "vessel", not: "can" } },
+    turntable: { type: "range", label: "Canvas spin speed", short: "Canvas spin", min: -1, max: 1, step: 0.01, value: 0, reset: 0 },
+    paused: { type: "toggle", label: "Pause paint", value: false, icon: "pause", showWhile: "pouring" },
+    // Whether paint is running from the vessel now, for the phone's pause button to follow.
+    pouring: { type: "toggle", label: "Pouring", value: false, hidden: true },
     fresh: { type: "action", label: "New canvas" },
     save: { type: "action", label: "Save painting" }
   },
-  phonePills: ["paused", "colour", "vessel", "save"],
+  phonePills: ["fresh", "save"],
+  phoneDock: ["colour", "vessel", "spinSpeed", "turntable"],
+  phoneDockPills: ["paused"],
   prompt: { title: "Grab the can and give it a toss", detail: "Pull it back and let it fly", low: true },
   hint: "Grab the can, pull it back and let it fly: it swings and pours, drawing as it goes. Try a bucket with more holes or a slot, spin it or the canvas either way, and save your painting when you like it.",
   Overlay: Overlays,

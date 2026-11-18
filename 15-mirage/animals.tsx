@@ -6,6 +6,7 @@ import * as THREE from "three/webgpu";
 import { dot, float, Fn, smoothstep, uv, instanceIndex, instancedArray, max, mix, normalWorld, positionWorld, vec2, vec3, vec4 } from "three/tsl";
 import { useDispose } from "../shared/engine/dispose";
 import { sound } from "../shared/engine/sound";
+import { useUnwind } from "../shared/engine/unwind";
 import { followPrompt } from "../shared/ui/Follow";
 import { shareResult } from "../shared/ui/Share";
 import { type Desert, homeAt, PATCH } from "./desert";
@@ -162,6 +163,8 @@ const groupSize = () => {
   const r = Math.random();
   return r < 0.15 ? 1 : r < 0.55 ? 2 : r < 0.85 ? 3 : 4;
 };
+// Seconds for the animals to dwindle away when the day is asked to unwind.
+const LEAVE = 1.8;
 const angleTo = (from: number, to: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 
 type Flamingo = {
@@ -270,6 +273,8 @@ export function Animals({ desert, life }: { desert: Desert; life: { current: Lif
     birds: [] as SkyBird[],
     nextFlock: 0,
     nextHerd: 0,
+    // Asked to unwind: when (in performance.now seconds) the flamingos and camels began to dwindle away with the oasis.
+    leaving: null as number | null,
     honk: 0,
     step: 0,
     water: [] as THREE.Vector3[],
@@ -319,12 +324,30 @@ export function Animals({ desert, life }: { desert: Desert; life: { current: Lif
     [kinds]
   );
   const f = useMemo(() => new Frame(), []);
+  useUnwind(() => {
+    herd.current.leaving = performance.now() / 1000;
+    return LEAVE;
+  });
 
   useFrame(({ clock }, raw) => {
     const delta = Math.min(raw, 1 / 20);
     const now = clock.elapsedTime;
     const h = herd.current;
     const { oasis, palms } = life.current;
+
+    // Unwinding, they dwindle away with the oasis, and none come again for a while.
+    if (h.leaving !== null) {
+      const gone = performance.now() / 1000 - h.leaving > LEAVE;
+      const keep = Math.exp(-delta * 3);
+      for (const b of h.flamingos) b.size *= keep;
+      for (const c of h.camels) c.size *= keep;
+      h.nextFlock = h.nextHerd = now + 8;
+      if (gone) {
+        h.flamingos.length = 0;
+        h.camels.length = 0;
+        h.leaving = null;
+      }
+    }
 
     // Ask for the probes' heights, and take the last answer.
     const where = probe.where;

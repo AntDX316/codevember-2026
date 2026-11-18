@@ -20,6 +20,8 @@ Codevember stands on a lot of other people's work. Thank you to all of them.
 
 [Darker Grotesque](https://github.com/bettergui/DarkerGrotesque) and [Karla](https://github.com/googlefonts/karla), both under the SIL Open Font License 1.1. The license texts are in [`licenses/`](licenses).
 
+The calendar's 3D title is built from Darker Grotesque's own outlines, converted to three.js's typeface format (`shared/hub/spaces/codevember-type.json`), under the same license.
+
 ## Scans
 
 All CC0, so no credit is required, but it is due.

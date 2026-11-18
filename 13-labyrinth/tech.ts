@@ -263,9 +263,9 @@ export function techGeometry(x: number, z: number, ends: boolean, seed: number, 
 // coarse one also nearer than `from`, where the fine one takes over.
 export function techMaterial(reach: { fly: number; walk: number; from?: number }) {
   const material = made(new THREE.MeshBasicNodeMaterial());
-  // Named for styles.ts, which shows it only in the Tron maze.
+  // Named for styles.ts, which shows what wears it only in the Tron maze. The mesh is hidden, never the material: the
+  // load's warm-up compiles hidden meshes, but passes over a material that is itself turned off.
   material.name = "tech";
-  material.visible = false;
   const { world, own } = placement();
   const rootLocal = attribute("aRoot", "vec3") as any;
   const tech = attribute("aTech", "vec4") as any;
@@ -368,7 +368,6 @@ export function trafficMesh(craft: number, packets: number) {
   geometry.setAttribute("aWay", new THREE.InstancedBufferAttribute(ways, 4));
   const material = made(new THREE.MeshBasicNodeMaterial(), false);
   material.name = "tech";
-  material.visible = false;
   const seed = attribute("aSeed", "vec4") as any;
   const way = attribute("aWay", "vec4") as any;
   const part = attribute("aPart", "float") as any;
@@ -410,5 +409,7 @@ export function trafficMesh(craft: number, packets: number) {
   const identity = new THREE.Matrix4();
   for (let i = 0; i < total; i++) mesh.setMatrixAt(i, identity);
   mesh.frustumCulled = false;
+  // Out of sight until styles.ts shows it in the Tron maze.
+  mesh.visible = false;
   return { mesh, material };
 }

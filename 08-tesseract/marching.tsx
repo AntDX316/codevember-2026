@@ -129,9 +129,9 @@ export function useMarchedMaterial(shade: (ro: any, rd: any, out: { depth: any; 
   return material;
 }
 
-export function MarchedShell({ material }: { material: THREE.Material }) {
+export function MarchedShell({ material, visible = true }: { material: THREE.Material; visible?: boolean }) {
   return (
-    <mesh frustumCulled={false} raycast={() => null} material={material}>
+    <mesh frustumCulled={false} raycast={() => null} material={material} visible={visible}>
       <sphereGeometry args={[80, 24, 16]} />
     </mesh>
   );

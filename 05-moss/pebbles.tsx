@@ -7,7 +7,7 @@ import * as THREE from "three/webgpu";
 import { attribute, color as tslColor, float, mix, mx_noise_float, normalMap, normalWorld, positionGeometry, positionLocal, sin, smoothstep, texture, time, uniform, uv, vec2, vec3 } from "three/tsl";
 import type { MossAssets } from "./assets";
 import { noise, poolAt, SHELF_V, surfaceAt } from "./cliff";
-import { hoverBody, hoverLevel, HOVER_SPIN, makeHover, pushers, type Hover } from "./hover";
+import { GRAVITY_SPREAD, hoverBody, hoverLevel, HOVER_SPIN, makeHover, pushers, type Hover } from "./hover";
 import { NOT_REFLECTED } from "./pools";
 import { mulberry32 } from "../shared/engine/random";
 
@@ -17,7 +17,8 @@ import { mulberry32 } from "../shared/engine/random";
 export const BIG_ROCKS_ONLY = 0x00010001;
 const SMALL_ROCK_GROUPS = 0x0002ffff;
 
-type Piece = { kind: number; x: number; y: number; z: number; size: number; flat: number; turn: number; hover: Hover; parked?: boolean; spun?: number; body?: any };
+// `gravity` is the gravity this rock has taken up so far, and `rouse` how long it is still being nudged awake after it.
+type Piece = { kind: number; x: number; y: number; z: number; size: number; flat: number; turn: number; hover: Hover; parked?: boolean; spun?: number; body?: any; gravity: number; rouse: number };
 
 function buildPebble() {
   const geometry = new THREE.IcosahedronGeometry(1, 3);
@@ -83,7 +84,7 @@ export function Pebbles({ assets, gravity, loose, piles }: { assets: MossAssets;
       const { u, v } = shelfSpot();
       surfaceAt(u, v, point);
       const size = 0.014 + Math.pow(rand(), 3.2) * 0.13;
-      list.push({ kind: rand() < 0.14 ? 1 + Math.floor(rand() * 3) : 0, x: point.x, y: point.y + size * 1.2, z: point.z, size, flat: 0.6 + rand() * 0.4, turn: rand() * 6.28, hover: makeHover(rand) });
+      list.push({ kind: rand() < 0.14 ? 1 + Math.floor(rand() * 3) : 0, x: point.x, y: point.y + size * 1.2, z: point.z, size, flat: 0.6 + rand() * 0.4, turn: rand() * 6.28, hover: makeHover(rand), gravity: 1, rouse: 0 });
     }
     for (let p = 0; p < piles; p++) {
       const { u, v } = shelfSpot();
@@ -96,7 +97,7 @@ export function Pebbles({ assets, gravity, loose, piles }: { assets: MossAssets;
         // The biggest at the bottom, and the rest resting on them.
         const up = i / stones;
         const size = (0.09 - up * 0.05) * (0.7 + rand() * 0.7);
-        list.push({ kind: rand() < 0.22 ? 1 + Math.floor(rand() * 3) : 0, x: point.x, y: point.y + size + up * (0.26 - out * 0.3) + 0.01, z: point.z, size, flat: 0.65 + rand() * 0.35, turn: rand() * 6.28, hover: makeHover(rand) });
+        list.push({ kind: rand() < 0.22 ? 1 + Math.floor(rand() * 3) : 0, x: point.x, y: point.y + size + up * (0.26 - out * 0.3) + 0.01, z: point.z, size, flat: 0.65 + rand() * 0.35, turn: rand() * 6.28, hover: makeHover(rand), gravity: 1, rouse: 0 });
       }
     }
     return list;
@@ -160,7 +161,7 @@ export function Pebbles({ assets, gravity, loose, piles }: { assets: MossAssets;
     [meshes]
   );
 
-  const state = useMemo(() => ({ owner: null as Piece[] | null, bodies: null as unknown, rouse: 0, gravity: gravity.current, drawn: false, matrix: new THREE.Matrix4(), p: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3() }), [gravity]);
+  const state = useMemo(() => ({ owner: null as Piece[] | null, bodies: null as unknown, frame: 0, drawn: false, matrix: new THREE.Matrix4(), p: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3() }), [gravity]);
 
   // Bodies are made here in the frame loop, and not in an effect, because the physics world can be torn down and
   // rebuilt underneath effects. Only a change of quality ever needs the old ones cleared, and it is safe to do it here too.
@@ -185,8 +186,10 @@ export function Pebbles({ assets, gravity, loose, piles }: { assets: MossAssets;
           .setGravityScale(Math.max(0, gravity.current))
           .setLinearDamping(0.12)
           .setAngularDamping(0.7)
-          // Falling from a height they would otherwise go straight through the thin rock in a single step.
-          .setCcdEnabled(true)
+          // Falling from a height they would otherwise go straight through the thin rock in a single step. Contacts
+          // predicted a little ahead catch them about as well as a full sweep did (without either, two thirds of them fell
+          // through), at a third of the cost: sweeping five hundred falling rocks every step held each change of gravity up.
+          .setSoftCcdPrediction(0.25)
       );
       // A few points of this rock's own shape, at its size.
       const outline = outlines[piece.kind];
@@ -203,6 +206,8 @@ export function Pebbles({ assets, gravity, loose, piles }: { assets: MossAssets;
       piece.body = body;
       piece.hover.ceiling = null;
       piece.parked = false;
+      piece.gravity = gravity.current;
+      piece.rouse = 0;
     }
   };
 
@@ -210,9 +215,8 @@ export function Pebbles({ assets, gravity, loose, piles }: { assets: MossAssets;
     const delta = Math.min(rawDelta, 1 / 20);
     if (state.owner !== pieces || state.bodies !== world.bodies) makeBodies();
     const { matrix, p, q, s } = state;
-    const changed = gravity.current !== state.gravity;
-    state.gravity = gravity.current;
-    state.rouse = changed ? 1.2 : Math.max(0, state.rouse - delta);
+    // Whose turn it is this frame to take up a change of gravity.
+    const turn = state.frame++ % GRAVITY_SPREAD;
     const dirty = [false, false, false, false];
     const clock = performance.now() / 1000;
     pieces.forEach((piece, i) => {
@@ -228,12 +232,16 @@ export function Pebbles({ assets, gravity, loose, piles }: { assets: MossAssets;
         piece.parked = false;
         piece.spun = 0;
       };
-      if (changed) {
-        if (gravity.current >= 0 && piece.parked) unpark();
-        if (!piece.parked) body.setGravityScale(Math.max(0, gravity.current), true);
-        body.setEnabledRotations(gravity.current >= 0, true, gravity.current >= 0, true);
-        if (gravity.current >= 0) piece.hover.ceiling = null;
-      }
+      if (i % GRAVITY_SPREAD === turn && piece.gravity !== gravity.current) {
+        piece.gravity = gravity.current;
+        piece.rouse = 1.2;
+        if (piece.gravity >= 0 && piece.parked) unpark();
+        if (!piece.parked) body.setGravityScale(Math.max(0, piece.gravity), true);
+        body.setEnabledRotations(piece.gravity >= 0, true, piece.gravity >= 0, true);
+        if (piece.gravity >= 0) piece.hover.ceiling = null;
+      } else piece.rouse = Math.max(0, piece.rouse - delta);
+      // From here on it goes by the gravity it has taken up, which is the slider's within a few frames.
+      const g = piece.gravity;
       if (piece.parked) {
         const near = body.translation();
         for (const pusher of pushers) {
@@ -247,12 +255,12 @@ export function Pebbles({ assets, gravity, loose, piles }: { assets: MossAssets;
         }
       }
       // A sleeping rock can drop straight back off, even when woken, so it keeps being woken and is given a nudge the new way.
-      if (state.rouse > 0 && gravity.current > 0 && body.isSleeping()) {
+      if (piece.rouse > 0 && g > 0 && body.isSleeping()) {
         body.wakeUp();
         body.applyImpulse({ x: 0, y: -body.mass() * 0.08, z: 0 }, true);
       }
-      if (gravity.current < 0 && !piece.parked) {
-        hoverBody(body, piece.hover, gravity.current, clock);
+      if (g < 0 && !piece.parked) {
+        hoverBody(body, piece.hover, g, clock);
         // Once it has arrived and settled there is no need to go on simulating it. It keeps bobbing and turning for the eye.
         const v = body.linvel();
         if (Math.abs(body.translation().y - hoverLevel(piece.hover, clock)) < 0.03 && v.x * v.x + v.z * v.z < 0.002) {

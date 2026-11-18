@@ -18,22 +18,8 @@ import type { Web } from "./web";
 export function Silk({ web, look, active }: { web: Web; look: Look; active: boolean }) {
   const size = useThree((state) => state.size);
   const camera = useThree((state) => state.camera) as THREE.PerspectiveCamera;
-  const { mesh, material, from, to, pixel, eye, facing } = useMemo(() => {
-    const count = web.segments.length;
-    const geometry = new THREE.InstancedBufferGeometry();
-    geometry.setAttribute("position", new THREE.Float32BufferAttribute([0, -1, 0, 1, -1, 0, 1, 1, 0, 0, 1, 0], 3));
-    geometry.setIndex([0, 1, 2, 0, 2, 3]);
-    // Each start carries the thread's width in its fourth place.
-    const from = new THREE.InstancedBufferAttribute(new Float32Array(count * 4), 4);
-    const to = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
-    from.setUsage(THREE.DynamicDrawUsage);
-    to.setUsage(THREE.DynamicDrawUsage);
-    geometry.setAttribute("aFrom", from);
-    geometry.setAttribute("aTo", to);
-    // The frame and spokes are dry silk, thicker; the sticky spiral finer and beaded.
-    web.segments.forEach((s, i) => ((from.array as Float32Array)[i * 4 + 3] = s.kind === 2 ? 0.8 : s.kind === 0 ? 1.6 : 1.15));
-    geometry.instanceCount = count;
-
+  // The material once for each web's look, and only the strips for each new web, so that spinning one builds no shader.
+  const { material, pixel, eye, facing } = useMemo(() => {
     // The size of a pixel one unit from the eye.
     const pixel = uniform(0.001);
     // The eye and the way it looks, set each frame. The strip is turned square to the look rather than to the eye
@@ -111,12 +97,31 @@ export function Silk({ web, look, active }: { web: Web; look: Look; active: bool
       );
     })() as any;
 
+    return { material, pixel, eye, facing };
+  }, [look]);
+  useDispose(material);
+
+  const { mesh, from, to } = useMemo(() => {
+    const count = web.segments.length;
+    const geometry = new THREE.InstancedBufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute([0, -1, 0, 1, -1, 0, 1, 1, 0, 0, 1, 0], 3));
+    geometry.setIndex([0, 1, 2, 0, 2, 3]);
+    // Each start carries the thread's width in its fourth place. Every thread moves every frame, so the whole of both is
+    // sent each frame, once: left at the usual usage, as three's WebGPU backend sends one marked dynamic again for every
+    // pass it is drawn in.
+    const from = new THREE.InstancedBufferAttribute(new Float32Array(count * 4), 4);
+    const to = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
+    geometry.setAttribute("aFrom", from);
+    geometry.setAttribute("aTo", to);
+    // The frame and spokes are dry silk, thicker; the sticky spiral finer and beaded.
+    web.segments.forEach((s, i) => ((from.array as Float32Array)[i * 4 + 3] = s.kind === 2 ? 0.8 : s.kind === 0 ? 1.6 : 1.15));
+    geometry.instanceCount = count;
     const mesh = new THREE.Mesh(geometry, material);
     mesh.frustumCulled = false;
     mesh.renderOrder = 2;
-    return { mesh, material, from, to, pixel, eye, facing };
-  }, [web, look]);
-  useDispose(mesh.geometry, material);
+    return { mesh, from, to };
+  }, [web, material]);
+  useDispose(mesh.geometry);
 
   useFrame(() => {
     if (!active) return;

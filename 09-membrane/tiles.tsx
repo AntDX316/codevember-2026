@@ -1,7 +1,7 @@
 "use client";
 
 import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { use, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three/webgpu";
 import { abs, clamp, cos, cross, dot, fwidth, length, mix, smoothstep, uniform, int, mod, uniformArray, float, instancedDynamicBufferAttribute, max, normalGeometry, normalize, positionGeometry, select, sin, transformNormalToView, varying, vec2, vec3 } from "three/tsl";
 import { useGrabbable } from "../shared/engine/controls";
@@ -445,7 +445,11 @@ type Loose = { position: THREE.Vector3; velocity: THREE.Vector3; turn: THREE.Qua
 // Clay tiles over a whole object, a layer under every tile, meeting so closely they read as one skin. Swipe across it and the tiles peel off in your wake, as
 // fast as you swipe; click it and a slow ripple of peeling runs out from where you touched. Each one floats off on the
 // air and is gone, and the next layer down is waiting.
+// Every shape is built while the page loads and kept, hidden but for the one chosen, so that a new shape is only a
+// change of which one shows: nothing is laid out, built or compiled at the moment it is picked.
 export function Tiles() {
+  // Every shape at every flake size is worked out before anything is shown, behind the loader.
+  use(prepare());
   const formName = useSetting<string>("form");
   const pitch = useSetting<number>("flakeSize");
   // The outlines fade in as soon as the slider moves and quickly out again once it stops.
@@ -459,8 +463,27 @@ export function Tiles() {
     const showing = performance.now() - changedAt.current < 300 ? 1 : 0;
     outlines.value += (showing - outlines.value) * (1 - Math.exp(-Math.min(delta, 0.05) * (showing ? 12 : 9)));
   });
-  // A new shape is a fresh set; a new flake size is not, so that dragging the slider is smooth.
-  return <Covered key={formName} formName={formName} pitch={pitch} />;
+  // One tile mesh for each fineness, shared by every shape, made once and kept until the day closes: the GPU may still be
+  // drawing with one for a frame after it is swapped out.
+  const made = useMemo(() => {
+    const all = new Map<string, THREE.BufferGeometry>();
+    for (const size of SIZES) for (const curved of [true, false]) for (const part of ["top", "under", "loose"] as const) tileGeometry(size, curved, part, all);
+    return all;
+  }, []);
+  useEffect(
+    () => () => {
+      made.forEach((geometry) => geometry.dispose());
+      made.clear();
+    },
+    [made]
+  );
+  return (
+    <>
+      {FORM_OPTIONS.map(({ value }) => (
+        <Covered key={value} formName={value} pitch={pitch} active={value === formName} made={made} />
+      ))}
+    </>
+  );
 }
 
 // The smallest flake the slider allows: buffers are made big enough for it once, and never rebuilt.
@@ -481,9 +504,25 @@ function layoutFor(name: string, pitch: number): Layout {
   return layout;
 }
 
+// Every shape at every size the slider can reach, worked out in short slices so the loader keeps moving, once per page.
+// Laid out on the spot instead, a new shape or a new size would hold up the frame it was chosen in.
+let prepared: Promise<void> | null = null;
+function prepare() {
+  if (!prepared)
+    prepared = new Promise((resolve) => {
+      const queue = FORM_OPTIONS.flatMap(({ value }) => SIZES.map((size) => [value, size] as const));
+      const next = () => {
+        const until = performance.now() + 12;
+        while (queue.length && performance.now() < until) layoutFor(...queue.shift()!);
+        if (queue.length) setTimeout(next, 0);
+        else resolve();
+      };
+      next();
+    });
+  return prepared;
+}
+
 // A tile mesh fine enough for flakes of this size: big flakes bend more across themselves, so they need more of it.
-// Each one is made once and kept: the GPU may still be drawing with one for a frame after it is swapped out, so none is
-// thrown away until the shape itself is.
 function tileGeometry(pitch: number, curved: boolean, part: "top" | "under" | "loose", made: Map<string, THREE.BufferGeometry>) {
   const k = pitch / SIZE;
   const fine = (n: number, least: number, most: number) => THREE.MathUtils.clamp(Math.round(n * k), least, most);
@@ -498,11 +537,12 @@ function tileGeometry(pitch: number, curved: boolean, part: "top" | "under" | "l
   return geometry;
 }
 
-function Covered({ formName, pitch }: { formName: string; pitch: number }) {
+// `active` is whether this shape is the one chosen. The others stay built, out of sight, and do nothing each frame.
+function Covered({ formName, pitch, active, made }: { formName: string; pitch: number; active: boolean; made: Map<string, THREE.BufferGeometry> }) {
   // Everything that does not change with the flake size: big enough for the smallest flakes, built and compiled once.
   const capacity = useMemo(() => layoutFor(formName, SMALLEST).spots.length, [formName]);
   const shape = useMemo(() => layoutFor(formName, 0.15), [formName]);
-  useView(shape.view, shape.centre);
+  useView(shape.view, shape.centre, active);
   const auto = useSettingRef<boolean>("auto");
   const peelSound = useSettingRef<string>("peelSound");
   // Where the floor is, in the object's own space, for leaves to land on.
@@ -533,7 +573,7 @@ function Covered({ formName, pitch }: { formName: string; pitch: number }) {
     };
   }, [capacity]);
   const group = useMemo(() => new THREE.Group(), []);
-  const made = useMemo(() => new Map<string, THREE.BufferGeometry>(), []);
+  group.visible = active;
   const meshes = useMemo(() => {
     const curved = shape.surface.kind !== "flat";
     const top = new THREE.InstancedMesh(tileGeometry(0.15, curved, "top", made), tileMaterial(data.tiles, data.curls, data.turns, false, shape.surface, DEPTH * 1.5), capacity);
@@ -561,12 +601,11 @@ function Covered({ formName, pitch }: { formName: string; pitch: number }) {
       group.remove(meshes.core, meshes.under, meshes.top, meshes.floating);
       for (const mesh of [meshes.top, meshes.under, meshes.floating, meshes.core]) (mesh.material as THREE.Material).dispose();
       meshes.core.geometry.dispose();
-      made.forEach((geometry) => geometry.dispose());
-      made.clear();
     };
   }, [group, meshes, shape, made]);
 
   // The flakes at this size. Changing it lays a fresh skin in place: the same buffers, rewritten, and no shader rebuilt.
+  // A shape out of sight keeps the skin it was given at load, so the warm-up draws it, and is laid afresh when chosen.
   const layout = layoutFor(formName, pitch);
   const count = layout.spots.length;
   const lay = (all: Layout) => {
@@ -590,7 +629,10 @@ function Covered({ formName, pitch }: { formName: string; pitch: number }) {
       attribute.needsUpdate = true;
     }
   };
+  const laid = useRef(false);
   useEffect(() => {
+    if (!active && laid.current) return;
+    laid.current = true;
     data.start.fill(-1);
     data.layer.fill(0);
     lay(layout);
@@ -604,24 +646,17 @@ function Covered({ formName, pitch }: { formName: string; pitch: number }) {
       mesh.geometry = tileGeometry(pitch, curved, part, made);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- lay only writes into what these name.
-  }, [layout, meshes, data, pitch, shape, made]);
-  // Every other size for this shape is worked out while nothing else is happening, so the slider never waits on one.
-  useEffect(() => {
-    let cancelled = false;
-    const queue = [...SIZES];
-    const next = () => {
-      if (cancelled || queue.length === 0) return;
-      layoutFor(formName, queue.shift()!);
-      setTimeout(next, 30);
-    };
-    const wait = setTimeout(next, 800);
-    return () => {
-      cancelled = true;
-      clearTimeout(wait);
-    };
-  }, [formName]);
+  }, [layout, meshes, data, pitch, shape, made, active]);
 
   const state = useRef({ time: 0, idle: 0, last: new THREE.Vector3(), lastTime: 0, moved: 0, ticks: 0 });
+  // Chosen again, a shape starts clean, as if new: nothing left in the air from last time, and a while before it peels
+  // by itself.
+  useEffect(() => {
+    if (!active) return;
+    data.loose.length = 0;
+    meshes.floating.count = 0;
+    state.current.idle = 0;
+  }, [active, data, meshes]);
   const peel = (i: number, at: number, axis: number, duration = PEEL, kick = 1) => {
     if (data.start[i] >= 0) return;
     data.start[i] = at;
@@ -661,9 +696,12 @@ function Covered({ formName, pitch }: { formName: string; pitch: number }) {
       if (offset.copy(from).addScaledVector(along, t).distanceTo(at) < reach) peel(i, state.current.time, angleOn(i, back), duration, kick);
     }
   };
-  useSettingAction("peel", () => wave(layout.spots[Math.floor(Math.random() * count)].at));
+  useSettingAction("peel", () => {
+    if (active) wave(layout.spots[Math.floor(Math.random() * count)].at);
+  });
   // Reset clears the air of every floating piece, calls off any peel still to come, and lays the first skin back on.
   useSettingAction("reset", () => {
+    if (!active) return;
     data.loose.length = 0;
     meshes.floating.count = 0;
     data.start.fill(-1);
@@ -683,6 +721,8 @@ function Covered({ formName, pitch }: { formName: string; pitch: number }) {
   };
   useGrabbable({
     pick: (ray) => {
+      // A ray meets hidden things too, so only the shape on show answers.
+      if (!active) return null;
       raycaster.ray.copy(ray as THREE.Ray);
       const hit = raycaster.intersectObject(meshes.core, false)[0];
       return hit ? { distance: hit.distance, point: hit.point.clone() } : null;
@@ -725,6 +765,7 @@ function Covered({ formName, pitch }: { formName: string; pitch: number }) {
     }
   };
   useFrame((_, rawDelta) => {
+    if (!active) return;
     const delta = Math.min(rawDelta, 0.05);
     const st = state.current;
     st.time += delta;
