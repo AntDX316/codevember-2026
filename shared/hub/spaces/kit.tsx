@@ -43,6 +43,8 @@ export const unfold = {
   // over the first moments of the move, so that neither takes the other's place at a stroke.
   standing: 0,
   standingness: uniform(0),
+  // Whether the camera is flying into a day, or back out of one: the eye's drift stays off till it lands, then eases in.
+  flying: false,
   // Where the eye was when a day was entered from the calendar, to pull back out to on the way back from it.
   left: null as null | { day: number; position: THREE.Vector3; quaternion: THREE.Quaternion; target: THREE.Vector3; fov: number }
 };
@@ -176,6 +178,8 @@ export const skyColour = (palette: Palette) => {
 
 // The sky alone, for the canvas to hold behind the page while the page is HTML (mirror.ts).
 export const SKY_LAYER = 20;
+// How long the day's loader takes to come up, with a little to spare (codevember.css, .cv-loader).
+const LOADER_UP = 400;
 
 export function Sky({ palette, radius = 300 }: { palette: Palette; radius?: number }) {
   const camera = useThree((state) => state.camera);
@@ -297,7 +301,7 @@ export function CameraDrift({ float = 0.09, turn = [0.2, 0.08], seed = 3 }: { fl
 
   // Off, before anything else moves the camera. Unless something has just taken the camera, or the way back to the page has
   // begun: then it is left where it was seen, for that to carry on from, rather than jumping.
-  const free = () => unfold.inWorld && !cameraTaken.current && hubState().view === "3d";
+  const free = () => unfold.inWorld && !cameraTaken.current && !unfold.flying && hubState().view === "3d";
   useFrame(() => {
     if (!s.laid) return;
     s.laid = false;
@@ -514,7 +518,11 @@ export function useSpace({ targets, anchor, centre, close, flight = 2.15 }: Spac
       setTipDay(null);
       dom.style.cursor = "";
       cameraTaken.current = false;
-      document.documentElement.classList.remove("cv-space-leaving");
+      unfold.flying = false;
+      // Into a day, the dark stays until the day's loader has come up over it (codevember.css: 0.28 s), or the calendar's last
+      // frame would show through the loader as it fades in.
+      const root = document.documentElement;
+      if (root.classList.contains("cv-space-leaving")) window.setTimeout(() => root.classList.remove("cv-space-leaving"), LOADER_UP);
     },
     [dom]
   );
@@ -535,6 +543,8 @@ export function useSpace({ targets, anchor, centre, close, flight = 2.15 }: Spac
       path: () => window.location.pathname,
       // The renderer and the scene, for switching parts of it off from a test to time what they cost.
       three: () => get(),
+      // The point the camera turns round, for following the camera from a test.
+      orbit: () => orbitPoint.current?.toArray() ?? null,
       // What the last frame drew, and every object on show, by name or type, for finding what costs a frame.
       drawn: () => {
         const { gl, scene } = get();
@@ -576,6 +586,8 @@ export function useSpace({ targets, anchor, centre, close, flight = 2.15 }: Spac
 
     // Out of a day's window: held square on to it, close, until the scene is up and the day's last frame starts to fade
     // into it, then drawn back to where the eye was when it went in, and the camera handed back to the visitor there.
+    // The eye's drift (CameraDrift) is held off from the moment a flight begins until the frame after it lands.
+    unfold.flying = !!(p.entering || p.leaving);
     const l = p.leaving;
     if (l) {
       cameraTaken.current = true;
