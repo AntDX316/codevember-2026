@@ -72,6 +72,7 @@ Where these appear, the code says so too.
 - **Tileable water caustic**, for Kelp's caustics and its surface from below: [Dave Hoskins](https://www.shadertoy.com/view/MdlXz8) (MIT)
 - **meshoptimizer**, which simplified Kelp's scanned rocks and Labyrinth's rabbit beforehand: [Arseny Kapoulkine](https://github.com/zeux/meshoptimizer) (MIT)
 - **Bump mapping without tangents**, for the veins in Labyrinth's leaves: Morten Mikkelsen, "Bump Mapping Unparametrized Surfaces on the GPU" (2010)
+- **Mathematical morphology** (erosion and dilation by a structuring element), for Erosion: Georges Matheron and Jean Serra, École des Mines de Paris (1964 onward)
 
 ## Bird wings
 

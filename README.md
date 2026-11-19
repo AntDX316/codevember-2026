@@ -105,6 +105,13 @@ Creating a fun, interactive three.js experience every day of November. One word,
       <a href="18-pendulum">Code</a> · <a href="https://adamwebsite.com/codevember/18-pendulum/">Live</a>
     </td>
   </tr>
+  <tr>
+    <td align="center" valign="top">
+      <a href="19-erosion"><img src="videos/19-erosion.gif" alt="Erosion" width="260"></a><br>
+      <b>Day 19: <a href="19-erosion">Erosion</a></b><br>
+      <a href="19-erosion">Code</a> · <a href="https://adamwebsite.com/codevember/19-erosion/">Live</a>
+    </td>
+  </tr>
 </table>
 
 ## Quick start
@@ -141,6 +148,7 @@ You need [Node.js](https://nodejs.org) 20.9 or newer, and a browser with WebGPU,
 | 16 | [Spore](16-spore) | A forest floor at night where spores you let go grow into a glowing, spreading bloom. |
 | 17 | [Kelp](17-kelp) | A kelp forest under a moving surface, with sardines that come by to look at you. Stir the water, pull the kelp about, and move the sun. |
 | 18 | [Pendulum](18-pendulum) | A can of paint swinging on a rope over a canvas in a daylit studio. Toss it and it draws; spin the bucket or the canvas, and keep the painting. |
+| 19 | [Erosion](19-erosion) | A clay sculpture hanging in a shaft of light. Drag across it to erode it cell by cell, the finest parts first, and wave away the dust; or grow it back out. |
 
 ## Controls
 
