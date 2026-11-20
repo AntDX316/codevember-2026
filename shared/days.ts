@@ -60,7 +60,8 @@ const LIVE: Record<number, string> = {
   16: "A forest floor at night where spores you let go grow into a glowing, spreading bloom.",
   17: "A kelp forest under a moving surface, with sardines that come by to look at you. Stir the water, pull the kelp about, and move the sun.",
   18: "A can of paint swinging on a rope over a canvas in a daylit studio. Toss it and it draws; spin the bucket or the canvas, and keep the painting.",
-  19: "A clay sculpture hanging in a shaft of light. Drag across it to erode it cell by cell, the finest parts first, and wave away the dust; or grow it back out."
+  19: "A clay sculpture hanging in a shaft of light. Drag across it to erode it cell by cell, the finest parts first, and wave away the dust; or grow it back out.",
+  20: "A chrysalis hanging under a branch in a dewy garden. Tap it and watch a butterfly split the case, climb out, fill and dry its wings, walk the branch and fly away; the next one's chrysalis grows."
 };
 
 const CODEVEMBER_YEAR = 2026;

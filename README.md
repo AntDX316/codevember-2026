@@ -111,6 +111,11 @@ Creating a fun, interactive three.js experience every day of November. One word,
       <b>Day 19: <a href="19-erosion">Erosion</a></b><br>
       <a href="19-erosion">Code</a> · <a href="https://adamwebsite.com/codevember/19-erosion/">Live</a>
     </td>
+    <td align="center" valign="top">
+      <a href="20-cocoon"><img src="videos/20-cocoon.gif" alt="Cocoon" width="260"></a><br>
+      <b>Day 20: <a href="20-cocoon">Cocoon</a></b><br>
+      <a href="20-cocoon">Code</a> · <a href="https://adamwebsite.com/codevember/20-cocoon/">Live</a>
+    </td>
   </tr>
 </table>
 
@@ -149,6 +154,7 @@ You need [Node.js](https://nodejs.org) 20.9 or newer, and a browser with WebGPU,
 | 17 | [Kelp](17-kelp) | A kelp forest under a moving surface, with sardines that come by to look at you. Stir the water, pull the kelp about, and move the sun. |
 | 18 | [Pendulum](18-pendulum) | A can of paint swinging on a rope over a canvas in a daylit studio. Toss it and it draws; spin the bucket or the canvas, and keep the painting. |
 | 19 | [Erosion](19-erosion) | A clay sculpture hanging in a shaft of light. Drag across it to erode it cell by cell, the finest parts first, and wave away the dust; or grow it back out. |
+| 20 | [Cocoon](20-cocoon) | A chrysalis hanging under a branch in a dewy garden. Tap it and watch a butterfly split the case, climb out, fill and dry its wings, walk the branch and fly away; the next one's chrysalis grows. |
 
 ## Controls
 

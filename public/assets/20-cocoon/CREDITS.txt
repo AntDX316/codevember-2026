@@ -1,0 +1,11 @@
+wings.webp: wing textures cut from Wikimedia Commons specimen photographs (background removed, fore/hind wings split, hidden parts filled). Adapted images, shared under the source licences.
+- Morpho peleides (dorsal, ventral): Bernard DUPONT, CC BY-SA 2.0. https://commons.wikimedia.org/wiki/File:Blue_Morpho_(Morpho_peleides)_(8419468465).jpg ; https://commons.wikimedia.org/wiki/File:Blue_Morpho_(Morpho_peleides)_underside_(8420566556).jpg
+- Danaus plexippus (dorsal, ventral): Didier Descouens / MHNT, CC BY-SA 4.0. https://commons.wikimedia.org/wiki/File:Danaus_plexippus_MHNT_dos.jpg ; https://commons.wikimedia.org/wiki/File:Danaus_plexippus_MHNT_ventre.jpg
+- Greta oto: NSG group from Lund, Sweden, CC0. https://commons.wikimedia.org/wiki/File:NW70-9_Greta_oto_(3429977042).jpg
+- Idea leuconoe (dorsal, used for both sides): Bernard DUPONT, CC BY-SA 2.0. https://commons.wikimedia.org/wiki/File:Wood_Nymph_(Idea_leuconoe_obscura)_(8430453568).jpg
+Bark: CC0 Poly Haven bark_brown_02 (shared from /codevember/tension/).
+wings-morpho.webp, wings-monarch.webp, wings-glasswing.webp, wings-paperkite.webp: the same photographs as wings.webp, one file per species at twice the resolution (four 2048 px tiles each), under the same licences and credits as above.
+wings-glasswing.webp is cut from a different photograph: Greta oto, specimen CAM008460 (dorsal), Cambridge butterfly wing collection, Montejo-Kovacevich, Jiggins, Warren and Wiltshire, CC BY 4.0. https://zenodo.org/records/2684906 (background removed, wings cut out, clear membrane marked).
+
+flutter.mp3 — butterfly wings flutter, generated with ElevenLabs sound effects (supplied by the site owner).
+scurry.mp3 — tiny insect legs scurrying, generated with ElevenLabs sound effects (supplied by the site owner).

@@ -38,7 +38,7 @@ From [Poly Haven](https://polyhaven.com):
 | [Shrub Sorrel 01](https://polyhaven.com/a/shrub_sorrel_01) | Rico Cilliers |
 | [Shrub 03](https://polyhaven.com/a/shrub_03) | Rico Cilliers |
 | [Rock Moss Set 01](https://polyhaven.com/a/rock_moss_set_01) | Kless Gyzen |
-| [Bark Brown 02](https://polyhaven.com/a/bark_brown_02), on the twigs in Tension and the trees in Spore | Rob Tuytel |
+| [Bark Brown 02](https://polyhaven.com/a/bark_brown_02), on the twigs in Tension and Cocoon and the trees in Spore | Rob Tuytel |
 | [Dry Decay Leaves](https://polyhaven.com/a/dry_decay_leaves), the forest floor in Spore | Amal Kumar |
 | [Forest Leaves 02](https://polyhaven.com/a/forest_leaves_02) | Rob Tuytel |
 | [Jolcham Oak Bark 01](https://polyhaven.com/a/jolcham_oak_bark_01) | Charlotte Baglioni |
@@ -83,6 +83,19 @@ The research Feather is built on, cited in its technical overview.
 - Feather tracts: Proctor and Lynch, *Manual of Ornithology* (1993)
 - The wingbeat: Tobalske and Dial (*Journal of Experimental Biology*, 1996)
 - Gull wingtip patterns: [gull-research.org](https://www.gull-research.org/)
+
+## Butterfly wings
+
+The wings in Cocoon are cut from specimen photographs (background removed, fore and hind wings split, hidden parts filled) and shared under their sources' licences; see [public/assets/20-cocoon/CREDITS.txt](public/assets/20-cocoon/CREDITS.txt).
+
+| Species | Photograph | Licence |
+| --- | --- | --- |
+| Blue Morpho (*Morpho peleides*), upper and under sides | [Bernard Dupont](https://commons.wikimedia.org/wiki/File:Blue_Morpho_(Morpho_peleides)_(8419468465).jpg), [underside](https://commons.wikimedia.org/wiki/File:Blue_Morpho_(Morpho_peleides)_underside_(8420566556).jpg) | CC BY-SA 2.0 |
+| Monarch (*Danaus plexippus*), upper and under sides | [Didier Descouens / MHNT](https://commons.wikimedia.org/wiki/File:Danaus_plexippus_MHNT_dos.jpg), [underside](https://commons.wikimedia.org/wiki/File:Danaus_plexippus_MHNT_ventre.jpg) | CC BY-SA 4.0 |
+| Glasswing (*Greta oto*) | Specimen CAM008460, Cambridge butterfly wing collection: Montejo-Kovacevich, Jiggins, Warren and Wiltshire ([Zenodo](https://zenodo.org/records/2684906)); earlier tile from [NSG group, Lund](https://commons.wikimedia.org/wiki/File:NW70-9_Greta_oto_(3429977042).jpg) (CC0) | CC BY 4.0 |
+| Paper Kite (*Idea leuconoe*) | [Bernard Dupont](https://commons.wikimedia.org/wiki/File:Wood_Nymph_(Idea_leuconoe_obscura)_(8430453568).jpg) | CC BY-SA 2.0 |
+
+The sounds and music in Cocoon are not in this repo.
 
 ## Caustics
 
