@@ -83,6 +83,8 @@ export class Pendulum {
   private sinceParcel = 0;
   // How the can was moving while held, for the throw when let go.
   private trail: { t: number; p: THREE.Vector3 }[] = [];
+  // Where each stream's last parcel came down, and which parcel it was, for the way the line runs on from there.
+  private last: { x: number; z: number; born: number; floor: boolean }[] = [];
 
   constructor(capacity = 2600) {
     for (let i = 0; i < capacity; i++) this.parcels.push({ p: new THREE.Vector3(), v: new THREE.Vector3(), volume: 0, born: 0, alive: false, stream: 0, axis: new THREE.Vector3() });
@@ -161,6 +163,7 @@ export class Pendulum {
   // Paint still falling is gone too, so none lands on a fresh canvas.
   rest() {
     for (const parcel of this.parcels) parcel.alive = false;
+    this.last.length = 0;
     this.waiting = true;
     this.finished = false;
     this.held = false;
@@ -268,14 +271,33 @@ export class Pendulum {
         // it, in the canvas's own turning frame.
         const local = scratch.c.copy(parcel.p).applyAxisAngle(Y, -this.canvasTurn);
         const onCanvas = Math.abs(local.x) < CANVAS / 2 + 0.01 && Math.abs(local.z) < CANVAS / 2 + 0.01;
-        if (parcel.p.y <= (onCanvas ? FACE : 0)) {
+        const height = onCanvas ? FACE : 0;
+        if (parcel.p.y <= height) {
           parcel.alive = false;
+          // A step ends with the parcel a little under the surface. It is put back to where it went through, and the
+          // canvas to where it had turned to by then: left where the step ended, each would lie up to a step's flight
+          // too far along its own way, a little less each time and then a whole step again, and where the line curves
+          // that shows as small steps sideways and a jump back.
+          const past = parcel.v.y < 0 ? THREE.MathUtils.clamp((parcel.p.y - height) / parcel.v.y, 0, STEP) : 0;
+          const at = scratch.c.copy(parcel.p).addScaledVector(parcel.v, -past);
+          const floor = !onCanvas;
+          if (floor && !(Math.abs(at.x) < FLOOR / 2 && Math.abs(at.z) < FLOOR / 2)) continue;
+          const turned = this.canvasTurn - this.canvasSpin * past;
+          const moving = scratch.d.set(parcel.v.x, 0, parcel.v.z);
+          const axis = scratch.e.copy(parcel.axis).setY(0);
           if (onCanvas) {
-            const moving = scratch.d.set(parcel.v.x - this.canvasSpin * parcel.p.z, 0, parcel.v.z + this.canvasSpin * parcel.p.x).applyAxisAngle(Y, -this.canvasTurn);
-            const axis = scratch.e.copy(parcel.axis).setY(0).applyAxisAngle(Y, -this.canvasTurn);
-            this.landings.push({ x: local.x, z: local.z, volume: parcel.volume, vx: moving.x, vz: moving.z, ax: axis.x, az: axis.z, floor: false });
-          } else if (Math.abs(parcel.p.x) < FLOOR / 2 && Math.abs(parcel.p.z) < FLOOR / 2)
-            this.landings.push({ x: parcel.p.x, z: parcel.p.z, volume: parcel.volume, vx: parcel.v.x, vz: parcel.v.z, ax: parcel.axis.x, az: parcel.axis.z, floor: true });
+            // On the canvas: where it comes down, and how fast it moves across it, in the canvas's own turning frame.
+            moving.set(parcel.v.x - this.canvasSpin * at.z, 0, parcel.v.z + this.canvasSpin * at.x).applyAxisAngle(Y, -turned);
+            axis.applyAxisAngle(Y, -turned);
+            at.applyAxisAngle(Y, -turned);
+          }
+          // The paint is drawn out along the line it is laying: from the stream's parcel before to this one, a step
+          // apart as they left. Its own flight points off to one side of that wherever the swing curves. Only the first
+          // of a stream, or one after a break, has nothing to go by but its flight.
+          const before = this.last[parcel.stream];
+          if (before && before.floor === floor && Math.abs(parcel.born - before.born) < STEP * 1.5) moving.set((at.x - before.x) / STEP, 0, (at.z - before.z) / STEP);
+          this.last[parcel.stream] = { x: at.x, z: at.z, born: parcel.born, floor };
+          this.landings.push({ x: at.x, z: at.z, volume: parcel.volume, vx: moving.x, vz: moving.z, ax: axis.x, az: axis.z, floor });
         }
       }
     }
