@@ -1,0 +1,12 @@
+HDRIs for Bolt (plasma), all from Poly Haven, CC0. Shipped as compact .room files (about 1 MB each), packed from the
+1k .hdr by src/codevember/days/21-bolt/plasma/pack-room.mjs:
+warm_bar.room: "Warm Bar", photography by Greg Zaal, processing by Jarod Guest. https://polyhaven.com/a/warm_bar
+christmas_photo_studio_01.room: "Christmas Photo Studio 01" by Sergej Majboroda. https://polyhaven.com/a/christmas_photo_studio_01
+studio_small_03.room: "Studio Small 03" by Greg Zaal. https://polyhaven.com/a/studio_small_03
+dresden_station_night.room: "Dresden Station (Night)" by Greg Zaal. https://polyhaven.com/a/dresden_station_night
+
+IRL Hands (loaded only when the setting is turned on; runs on the device, nothing is uploaded):
+mediapipe/hand_landmarker.task: MediaPipe Hand Landmarker model (float16, v1) by Google, Apache-2.0.
+https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker
+mediapipe/vision_wasm_internal.js, vision_wasm_internal.wasm: from @mediapipe/tasks-vision 1.2.2 by Google, Apache-2.0.
+https://github.com/google-ai-edge/mediapipe

@@ -116,6 +116,11 @@ Creating a fun, interactive three.js experience every day of November. One word,
       <b>Day 20: <a href="20-cocoon">Cocoon</a></b><br>
       <a href="20-cocoon">Code</a> · <a href="https://adamwebsite.com/codevember/20-cocoon/">Live</a>
     </td>
+    <td align="center" valign="top">
+      <a href="21-bolt"><img src="videos/21-bolt.gif" alt="Bolt" width="260"></a><br>
+      <b>Day 21: <a href="21-bolt">Bolt</a></b><br>
+      <a href="21-bolt">Code</a> · <a href="https://adamwebsite.com/codevember/21-bolt/">Live</a>
+    </td>
   </tr>
 </table>
 
@@ -155,6 +160,7 @@ You need [Node.js](https://nodejs.org) 20.9 or newer, and a browser with WebGPU,
 | 18 | [Pendulum](18-pendulum) | A can of paint swinging on a rope over a canvas in a daylit studio. Toss it and it draws; spin the bucket or the canvas, and keep the painting. |
 | 19 | [Erosion](19-erosion) | A clay sculpture hanging in a shaft of light. Drag across it to erode it cell by cell, the finest parts first, and wave away the dust; or grow it back out. |
 | 20 | [Cocoon](20-cocoon) | A chrysalis hanging under a branch in a dewy garden. Tap it and watch a butterfly split the case, climb out, fill and dry its wings, walk the branch and fly away; the next one's chrysalis grows. |
+| 21 | [Bolt](21-bolt) | A plasma globe floating in a dark room it lights itself. Touch the glass and the lightning finds your fingertip; turn on IRL Hands and touch it with your real fingers through the camera. |
 
 ## Controls
 

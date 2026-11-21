@@ -13,6 +13,7 @@ Codevember stands on a lot of other people's work. Thank you to all of them.
 | [Next.js](https://nextjs.org) | MIT |
 | [React](https://react.dev) | MIT |
 | [Framer Motion](https://motion.dev) | MIT |
+| [MediaPipe](https://github.com/google-ai-edge/mediapipe) (`@mediapipe/tasks-vision` and the Hand Landmarker model, for Bolt's IRL Hands) | Apache-2.0 |
 
 `npm run build` writes the full license text of everything in the built site to `public/THIRD_PARTY_NOTICES.txt`.
 
@@ -148,3 +149,16 @@ The worn concrete under the studio floor's paint in Pendulum is a scan from [Pol
 ## Meshy
 
 The rabbits and the leaves among the vines in Labyrinth are [Meshy](https://www.meshy.ai) models made for it, cut right down for the scene.
+
+## Bolt
+
+The rooms round Bolt's plasma globe are HDRIs from [Poly Haven](https://polyhaven.com), all CC0, so no credit is required, but it is due. They ship as compact `.room` files packed from the 1k `.hdr` by `21-bolt/plasma/pack-room.mjs`.
+
+| Asset | By |
+| --- | --- |
+| [Warm Bar](https://polyhaven.com/a/warm_bar) | Greg Zaal (photography), Jarod Guest (processing) |
+| [Christmas Photo Studio 01](https://polyhaven.com/a/christmas_photo_studio_01) | Sergej Majboroda |
+| [Studio Small 03](https://polyhaven.com/a/studio_small_03) | Greg Zaal |
+| [Dresden Station (Night)](https://polyhaven.com/a/dresden_station_night) | Greg Zaal |
+
+IRL Hands runs Google's [MediaPipe Hand Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker) on the visitor's own device (Apache-2.0); its model and WebAssembly files are in `public/assets/21-bolt/mediapipe/`.

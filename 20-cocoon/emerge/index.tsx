@@ -381,6 +381,8 @@ function Scene() {
       shiftV: new THREE.Vector3(),
       drawn: 0,
       drawnV: { v: 0 },
+      // A new chrysalis brings the view home to it, however far the visitor took it: how much of that glide is left.
+      recentre: 0,
       focusV: new THREE.Vector3(),
       // The pose of the wings and legs at the moment one thing hands over to another, and how long ago.
       hand: { t: 9, flap: 0, fold: 0, sweep: 0, hindSweep: 0, pitch: 0, hindLag: 0, bend: 0, twist: 0, camber: 0, tuck: 0, tucked: 1 }
@@ -1299,6 +1301,7 @@ function Scene() {
         b.object.visible = false;
         sim.t = 0;
         sim.pod = "growing";
+        sim.recentre = 4;
         sim.podT = 0;
         sim.grow = 0;
         pupa.grow(0);
@@ -1548,6 +1551,19 @@ function Scene() {
           .sub(orbit)
           .multiplyScalar((own + sim.drawn) / d)
           .add(orbit);
+      // A new chrysalis: wherever the visitor panned or zoomed, the view glides back to centre on it at the distance it
+      // started from, carried as above (the angle they chose is kept). Their hand still comes first, and the glide
+      // takes up again after.
+      if (sim.recentre > 0 && mine) {
+        sim.recentre = Math.max(0, sim.recentre - dt);
+        const k = 1 - Math.exp(-2.2 * dt);
+        const off = scratch.b.copy(podAt).add(sim.shift).sub(orbit).multiplyScalar(k);
+        orbit.add(off);
+        camera.position.add(off);
+        const now = camera.position.distanceTo(orbit);
+        const home = sim.home + sim.drawn;
+        if (now > 0.05) camera.position.sub(orbit).multiplyScalar((now + (home - now) * k) / now).add(orbit);
+      }
     }
     // Focus on the butterfly once it is out, held on the branch as it flies off.
     const sharp = out && !(sim.stage === "shell" && t < 13.8) && !(sim.stage === "leaving" && sim.fly.t > 1.2) ? subject : podAt;
