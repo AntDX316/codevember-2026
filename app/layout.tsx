@@ -19,6 +19,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body>
         <div className="cv-root">
           <HubShell>{children}</HubShell>
+          <a className="cv-site-credit" href="https://github.com/AntDX316" target="_blank" rel="noreferrer">Site by @AntDX316</a>
         </div>
       </body>
     </html>
