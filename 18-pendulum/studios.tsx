@@ -1,11 +1,11 @@
 "use client";
 
-import { useLoader } from "@react-three/fiber";
 import { useMemo } from "react";
 import * as THREE from "three/webgpu";
 import { color, float, mix, mx_noise_float, positionWorld, smoothstep, texture, uv, vec2, vec3 } from "three/tsl";
 import { useDispose } from "../shared/engine/dispose";
 import { lehmer } from "../shared/engine/random";
+import { loadRetried, suspendRetried } from "../shared/engine/retry";
 import { underCanvas } from "./canvas";
 import { painting, ROOM, spills } from "./studio";
 
@@ -328,7 +328,7 @@ function softbox(k: ReturnType<typeof kit>, at: THREE.Vector3, face: THREE.Mater
 // ——— The gallery: a white loft. A white painted floor covered in paint, white walls, a wall of tall windows with soft
 // daylight falling in across the floor, and the cyclorama with its softboxes round the canvas. ———
 export function Gallery() {
-  const [concrete] = useLoader(THREE.TextureLoader, [`${ROOT}/concrete_floor_worn_001_diff_2k.jpg`]);
+  const concrete = suspendRetried(() => loadRetried(new THREE.TextureLoader(), `${ROOT}/concrete_floor_worn_001_diff_2k.jpg`), ["pendulum-gallery-concrete"]);
   const parts = useMemo(() => {
     concrete.wrapS = concrete.wrapT = THREE.RepeatWrapping;
     const k = kit();

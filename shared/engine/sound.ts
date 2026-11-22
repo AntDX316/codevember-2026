@@ -236,7 +236,13 @@ class SoundEngine {
     if (!pending) {
       pending = fetch(url)
         .then((answer) => (answer.ok ? answer.arrayBuffer() : Promise.reject(new Error(String(answer.status)))))
-        .then((data) => (this.context ?? new AudioContext()).decodeAudioData(data))
+        .then((data) => {
+          // Decoded in a throwaway offline context when audio has not been woken yet: a real AudioContext for each
+          // preloaded sound would hold the audio device open and run into the browser's limit on live contexts.
+          if (this.context) return this.context.decodeAudioData(data);
+          const Offline = window.OfflineAudioContext ?? (window as unknown as { webkitOfflineAudioContext?: typeof OfflineAudioContext }).webkitOfflineAudioContext;
+          return Offline ? new Offline(1, 1, 44100).decodeAudioData(data) : null;
+        })
         .catch(() => null);
       this.samples.set(url, pending);
     }

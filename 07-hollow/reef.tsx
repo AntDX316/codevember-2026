@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { suspend } from "suspend-react";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import {
@@ -34,6 +33,7 @@ import {
 } from "three/tsl";
 import * as THREE from "three/webgpu";
 import { lehmer } from "../shared/engine/random";
+import { loadRetried, suspendRetried } from "../shared/engine/retry";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- TSL's node types do not model every operator. */
 
@@ -65,7 +65,7 @@ export function causticsOn(noise: THREE.Data3DTexture, time: any): any {
 }
 
 async function loadTexture(url: string, colour: boolean, flip: boolean) {
-  const tex = await new THREE.TextureLoader().loadAsync(url);
+  const tex = await loadRetried(new THREE.TextureLoader(), url);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.colorSpace = colour ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   tex.flipY = flip;
@@ -75,7 +75,7 @@ async function loadTexture(url: string, colour: boolean, flip: boolean) {
 
 // Each piece of a scan as plain geometry, standing on y = 0, centred, and one unit at its largest.
 async function loadRock(name: string) {
-  const [gltf, diffuse, normal] = await Promise.all([new GLTFLoader().loadAsync(`${ROOT}/${name}/${name}.gltf`), loadTexture(`${ROOT}/${name}/textures/${name}_diff_1k.jpg`, true, false), loadTexture(`${ROOT}/${name}/textures/${name}_nor_gl_1k.jpg`, false, false)]);
+  const [gltf, diffuse, normal] = await Promise.all([loadRetried(new GLTFLoader(), `${ROOT}/${name}/${name}.gltf`), loadTexture(`${ROOT}/${name}/textures/${name}_diff_1k.jpg`, true, false), loadTexture(`${ROOT}/${name}/textures/${name}_nor_gl_1k.jpg`, false, false)]);
   const pieces: THREE.BufferGeometry[] = [];
   gltf.scene.updateMatrixWorld(true);
   gltf.scene.traverse((child) => {
@@ -101,7 +101,7 @@ async function loadRock(name: string) {
 
 // A real fish, turned so that it lies along x with its head at +x, one unit long, as the swimming expects.
 async function loadFish() {
-  const [gltf, diffuse, normal, surface] = await Promise.all([new GLTFLoader().loadAsync(`${ROOT}/barramundi_fish/fish.gltf`), loadTexture(`${ROOT}/barramundi_fish/fish_diff.jpg`, true, false), loadTexture(`${ROOT}/barramundi_fish/fish_nor.jpg`, false, false), loadTexture(`${ROOT}/barramundi_fish/fish_orm.jpg`, false, false)]);
+  const [gltf, diffuse, normal, surface] = await Promise.all([loadRetried(new GLTFLoader(), `${ROOT}/barramundi_fish/fish.gltf`), loadTexture(`${ROOT}/barramundi_fish/fish_diff.jpg`, true, false), loadTexture(`${ROOT}/barramundi_fish/fish_nor.jpg`, false, false), loadTexture(`${ROOT}/barramundi_fish/fish_orm.jpg`, false, false)]);
   let geometry: THREE.BufferGeometry | null = null;
   gltf.scene.updateMatrixWorld(true);
   gltf.scene.traverse((child) => {
@@ -146,7 +146,7 @@ async function loadReef(lowDetail: boolean) {
 }
 
 export type ReefAssets = Awaited<ReturnType<typeof loadReef>>;
-export const useReefAssets = (lowDetail: boolean) => suspend(() => loadReef(lowDetail), ["hollow-reef", lowDetail]);
+export const useReefAssets = (lowDetail: boolean) => suspendRetried(() => loadReef(lowDetail), ["hollow-reef", lowDetail]);
 
 // Things are scattered in clumps, thick near the peach and thinning out with distance.
 function scatter(mesh: THREE.InstancedMesh, salt: number, reach: number, clumps: number, size: (r: () => number, out: THREE.Vector3) => void, sink = 0.04, colours?: string[], tilt = 0) {

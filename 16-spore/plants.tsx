@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { suspend } from "suspend-react";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import * as THREE from "three/webgpu";
@@ -30,6 +29,7 @@ import {
 } from "three/tsl";
 import type { QualityTier } from "../shared/engine/types";
 import { mulberry32 } from "../shared/engine/random";
+import { loadRetried, suspendRetried } from "../shared/engine/retry";
 import { cull, fernMesh } from "./litter";
 import { clock, FALLEN, giantLight, glowAt, light, LOG, logZ, phoneLike, surfaceAt } from "./world";
 
@@ -42,7 +42,7 @@ type Scan = { geometry: THREE.BufferGeometry; size: THREE.Vector3 };
 type Plant = { diffuse: THREE.Texture; normal: THREE.Texture; scans: Scan[] };
 
 async function loadTexture(url: string, colour: boolean) {
-  const t = await new THREE.TextureLoader().loadAsync(url);
+  const t = await loadRetried(new THREE.TextureLoader(), url);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.colorSpace = colour ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   t.anisotropy = 8;
@@ -51,7 +51,7 @@ async function loadTexture(url: string, colour: boolean) {
 }
 async function loadPlant(name: string, resolution: string): Promise<Plant> {
   const [gltf, diffuse, normal] = await Promise.all([
-    new GLTFLoader().loadAsync(`${ROOT}/${name}/${name}.gltf`),
+    loadRetried(new GLTFLoader(), `${ROOT}/${name}/${name}.gltf`),
     loadTexture(`${ROOT}/${name}/textures/${name}_diff_${resolution}.jpg`, true),
     loadTexture(`${ROOT}/${name}/textures/${name}_nor_gl_${resolution}.jpg`, false)
   ]);
@@ -307,7 +307,7 @@ function twigGeometry() {
 
 export function Plants({ tier }: { tier: QualityTier }) {
   const sharp = tier !== "low" || !phoneLike();
-  const assets = suspend(() => loadAll(sharp), ["codevember-spore-plants", sharp]);
+  const assets = suspendRetried(() => loadAll(sharp), ["codevember-spore-plants", sharp]);
   const meshes = useMemo(() => {
     const rand = mulberry32(17);
     const scale = tier === "low" ? 0.5 : tier === "medium" ? 0.75 : 1;

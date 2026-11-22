@@ -1,12 +1,12 @@
 "use client";
 
-import { useLoader } from "@react-three/fiber";
 import { useMemo } from "react";
 import * as THREE from "three/webgpu";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { abs, attribute, clamp, color, float, length, mix, mx_noise_float, normalMap, normalWorld, positionWorld, pow, smoothstep, texture, uniform, vec2, vec3 } from "three/tsl";
 import { useDispose } from "../../shared/engine/dispose";
+import { loadRetried, suspendRetried } from "../../shared/engine/retry";
 import { BOX_TOP, POST_TOP, POST_X } from "./rods";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- TSL's node types do not model every operator. */
@@ -157,7 +157,10 @@ function Cables() {
 
 // A concrete floor and a back wall, the floor's own scan, both falling away to black past the arc's reach.
 export function Room() {
-  const [diff, nor, rough] = useLoader(THREE.TextureLoader, [`${ROOT}/concrete_floor_worn_001_diff_2k.jpg`, `${ROOT}/concrete_floor_worn_001_nor_gl_2k.jpg`, `${ROOT}/concrete_floor_worn_001_rough_2k.jpg`]);
+  const [diff, nor, rough] = suspendRetried(
+    () => Promise.all(["diff", "nor_gl", "rough"].map((map) => loadRetried(new THREE.TextureLoader(), `${ROOT}/concrete_floor_worn_001_${map}_2k.jpg`))),
+    ["bolt-ladder-concrete"]
+  );
   const parts = useMemo(() => {
     for (const t of [diff, nor, rough]) {
       t.wrapS = t.wrapT = THREE.RepeatWrapping;

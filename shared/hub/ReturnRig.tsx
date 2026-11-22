@@ -175,10 +175,14 @@ export function ReturnRig({ slug, definition }: { slug: string; definition: DayD
     copy.width = source.width;
     copy.height = source.height;
     const ctx = copy.getContext("2d");
-    if (ctx) {
+    // A canvas with no size (a window minimised at this frame) cannot be copied: go back without the held frame.
+    try {
+      if (!ctx) throw new Error("No 2D context");
       ctx.drawImage(source, 0, 0);
       holdFrame(copy);
-    } else finishReturn();
+    } catch {
+      finishReturn();
+    }
     go();
   }, 3);
 

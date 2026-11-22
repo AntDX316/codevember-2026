@@ -13,6 +13,8 @@ import { Post } from "./Post";
 import { Extents } from "./extents";
 import { Hover } from "./hover";
 import { withRetries } from "./retry";
+import { track } from "./track";
+import { explain, lost, NO_3D, reportFailure, type Failure } from "./failure";
 import { AdaptiveQuality, initialTier, topDpr, QualityProvider, scenePhase, useQuality, type QualityChoice } from "./quality";
 import { SettingsProvider, useCreateSettings } from "./settings";
 import { DEFAULT_LOOK, type DayDefinition, type Look, type QualityTier, type RenderPhase } from "./types";
@@ -35,7 +37,7 @@ export function useLook(patch: Partial<Look>) {
   }, [set, key]);
 }
 
-class SceneBoundary extends Component<{ onError: (message: string) => void; children: ReactNode }, { failed: boolean }> {
+class SceneBoundary extends Component<{ onError: (failure: Failure) => void; children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
 
   static getDerivedStateFromError() {
@@ -44,7 +46,7 @@ class SceneBoundary extends Component<{ onError: (message: string) => void; chil
 
   componentDidCatch(error: Error) {
     console.error(error);
-    this.props.onError(error.message);
+    this.props.onError(explain(error));
   }
 
   render() {
@@ -255,7 +257,8 @@ function SceneWarmup({ phase, onCompiling, onReady, judge }: { phase: RefObject<
 // so there is no new GPU device, canvas or page load between them.
 export default function Stage({ day, onStep }: { day: CodevemberDay; onStep: (step: LoadStep) => void }) {
   const [loaded, setLoaded] = useState<LoadedDay | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Failure | null>(null);
+  const making = useRef<Promise<never> | null>(null);
   const [choice, setChoice] = useState<QualityChoice>("auto");
   const [autoTier, setAutoTier] = useState<QualityTier>(initialTier);
   const [isWebGPU, setIsWebGPU] = useState(true);
@@ -295,9 +298,11 @@ export default function Stage({ day, onStep }: { day: CodevemberDay; onStep: (st
   useEffect(() => {
     let cancelled = false;
     if (loaded) advance("swap");
+    // A new day starts clean, unless the failure was the renderer's own, which a new day cannot mend.
+    setError((shown) => (shown && (shown.kind === "no-3d" || shown.kind === "memory") ? shown : null));
     const load = dayLoaders[`${String(day.day).padStart(2, "0")}-${day.word.toLowerCase()}`];
     if (!load) {
-      setError("This day has not been built yet.");
+      setError({ kind: "missing", message: "This day has not been built yet.", detail: "" });
       return;
     }
     const fade = new Promise((resolve) => window.setTimeout(resolve, loaded ? 320 : 0));
@@ -310,8 +315,8 @@ export default function Stage({ day, onStep }: { day: CodevemberDay; onStep: (st
         setLoaded({ id: loadId.current, day, definition: module.default });
         advance("scene");
       })
-      .catch((failure: Error) => {
-        if (!cancelled) setError(failure.message);
+      .catch((failure: unknown) => {
+        if (!cancelled) setError(explain(failure));
       });
     return () => {
       cancelled = true;
@@ -319,9 +324,11 @@ export default function Stage({ day, onStep }: { day: CodevemberDay; onStep: (st
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day]);
 
-  // An error message has to be readable, so it takes the loader down with it.
+  // An error message has to be readable, so it takes the loader down with it. And it is counted, by kind.
   useEffect(() => {
-    if (error) advance("done");
+    if (!error) return;
+    advance("done");
+    reportFailure(error);
   }, [error, advance]);
 
   // Full resolution again for a new day, or a tier chosen by hand.
@@ -342,22 +349,39 @@ export default function Stage({ day, onStep }: { day: CodevemberDay; onStep: (st
         dpr={dpr}
         // Well past any sky dome plus the furthest the camera can get from it, or zooming out cuts a black hole in the sky.
         camera={{ fov: 36, near: 0.05, far: 400 }}
-        gl={async (props) => {
-          let renderer = new THREE.WebGPURenderer({ ...(props as object), antialias: false, alpha: false });
-          try {
-            await renderer.init();
-          } catch (failure) {
-            // Phones can refuse WebGPU when short of memory. The WebGL backend often still gets through.
-            console.error(failure);
-            renderer = new THREE.WebGPURenderer({ ...(props as object), antialias: false, alpha: false, forceWebGL: true });
-            await renderer.init();
-          }
-          (renderer as unknown as { onDeviceLost: (info: { message: string }) => void }).onDeviceLost = (info) => {
-            setError(`The GPU connection was lost (${info.message}). Reload to continue.`);
-          };
-          setIsWebGPU((renderer.backend as unknown as { isWebGPUBackend?: boolean }).isWebGPUBackend === true);
-          return renderer as never;
-        }}
+        // One at a time: R3F asks again on every render until the renderer is ready, and each ask would start another GPU
+        // device on the same canvas (or, with none to be had, fail and re-render again, without end). Once one is made it
+        // asks no more, so the next ask, after a remount, makes a new one.
+        gl={(props) =>
+          (making.current ??= (async () => {
+            let renderer = new THREE.WebGPURenderer({ ...(props as object), antialias: false, alpha: false });
+            try {
+              await renderer.init();
+            } catch (failure) {
+              // Phones can refuse WebGPU when short of memory. The WebGL backend often still gets through.
+              console.error(failure);
+              track("webgpu-refused");
+              renderer = new THREE.WebGPURenderer({ ...(props as object), antialias: false, alpha: false, forceWebGL: true });
+              try {
+                await renderer.init();
+              } catch (again) {
+                // No WebGL 2 either: nothing can be drawn, so say so rather than leave a black page.
+                console.error(again);
+                setError((shown) => shown ?? { ...NO_3D, detail: explain(again).detail });
+                return new Promise<never>(() => {});
+              }
+            }
+            (renderer as unknown as { onDeviceLost: (info: { message: string }) => void }).onDeviceLost = (info) => {
+              setError(lost(info.message));
+            };
+            const webgpu = (renderer.backend as unknown as { isWebGPUBackend?: boolean }).isWebGPUBackend === true;
+            setIsWebGPU(webgpu);
+            // How many visits draw with WebGL instead, for the admin portal beside the failures.
+            if (!webgpu) track("renderer-webgl");
+            making.current = null;
+            return renderer as never;
+          })())
+        }
         onCreated={() => advance("scene")}
       >
         <QualityProvider value={{ tier, isWebGPU }}>
@@ -396,7 +420,11 @@ export default function Stage({ day, onStep }: { day: CodevemberDay; onStep: (st
 
       {error ? (
         <div className="cv-error" role="alert">
-          <p>{error}</p>
+          <p>{error.message}</p>
+          {error.detail ? <p className="cv-error-detail">{error.detail}</p> : null}
+          <button type="button" className="cv-pill" onClick={() => window.location.reload()}>
+            Reload
+          </button>
           <a href={dayHref(days[0]).replace(/[^/]+\/$/, "")}>All days</a>
         </div>
       ) : null}

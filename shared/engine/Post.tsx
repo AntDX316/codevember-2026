@@ -107,6 +107,20 @@ export const hazeLink = {
   }
 };
 
+// Every node in a pass graph, each once: the passes, blurs and copies that own render targets among them.
+const BASE_DISPOSE = THREE.Node.prototype.dispose;
+function passNodes(root: any) {
+  const seen = new Set<any>();
+  const queue = [root];
+  while (queue.length) {
+    const node = queue.pop();
+    if (!node || seen.has(node)) continue;
+    seen.add(node);
+    for (const child of node.getChildren?.() ?? []) queue.push(child);
+  }
+  return seen;
+}
+
 type PostProps = {
   look: Look;
   quality: QualityTier;
@@ -166,7 +180,11 @@ export function Post({ look, quality, hasHaze, bounce = true, halfBounce = false
     let hazeDepth: any = null;
     let sceneDepth: any = null;
 
-    if (tier === "low") {
+    // The extra buffers the scene pass writes beside its colour (surface colour, normals, motion) are read only by bounce
+    // light, ambient occlusion and the temporal filter. Without any of those they are full-screen textures nothing reads,
+    // about 60 MB on a Retina screen, so they are left out; the picture is the same either way.
+    const extras = tier !== "low" && ((tier === "high" && bounce) || occlusion !== false || temporal !== false);
+    if (!extras) {
       color = scenePass.getTextureNode("output");
     } else {
       scenePass.setMRT(
@@ -324,6 +342,11 @@ export function Post({ look, quality, hasHaze, bounce = true, halfBounce = false
       sin(dot(screenUV.add(fract(time.mul(7.13))), vec2(12.9898, 78.233))).mul(43758.5453)
     ).sub(0.5);
     stack.outputNode = vec4(graded.rgb.mul(falloff).add(vec3(noise.mul(uniforms.grain))), 1);
+    // A frame copied into a texture for a pass to read (edge smoothing, a blur) is a flat picture, drawn with no depth test,
+    // but is given a depth buffer the size of the screen by default. Dropped before anything is drawn into it.
+    for (const node of passNodes(stack.outputNode)) {
+      if (node.isRTTNode && node.renderTarget) node.renderTarget.depthBuffer = false;
+    }
     return { stack, tuners, hazeDepth, sceneDepth };
     // Only the things that change the graph's shape are dependencies. Look values go through tuners.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -346,7 +369,16 @@ export function Post({ look, quality, hasHaze, bounce = true, halfBounce = false
     if (sceneDepth) overlayLink.setDepth(sceneDepth);
   }, [hazeDepth, sceneDepth]);
 
-  useEffect(() => () => stack.dispose(), [stack]);
+  // The stack's own dispose frees only its last quad. The passes in it hold their render targets (several full-screen
+  // textures) until each is disposed, so every move to another day or tier used to leave the last one's on the GPU: 30 to
+  // 60 MB a move on a phone, until the page was closed.
+  useEffect(
+    () => () => {
+      for (const node of passNodes(stack.outputNode)) if (node.dispose !== BASE_DISPOSE) node.dispose();
+      stack.dispose();
+    },
+    [stack]
+  );
 
   // Priority 1 takes over from R3F's own render call.
   useFrame(() => {

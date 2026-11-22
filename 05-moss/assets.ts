@@ -1,6 +1,6 @@
-import { suspend } from "suspend-react";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as THREE from "three/webgpu";
+import { loadRetried, suspendRetried } from "../shared/engine/retry";
 import type { QualityTier } from "../shared/engine/types";
 
 // Scanned rock and moss, all CC0: Poly Haven and ambientCG. See public/assets/05-moss/CREDITS.txt.
@@ -26,7 +26,7 @@ export type MossAssets = {
 };
 
 async function loadTexture(url: string, colour: boolean) {
-  const texture = await new THREE.TextureLoader().loadAsync(url);
+  const texture = await loadRetried(new THREE.TextureLoader(), url);
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.colorSpace = colour ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   texture.anisotropy = 12;
@@ -36,7 +36,7 @@ async function loadTexture(url: string, colour: boolean) {
 // Pulled out of the glTF as plain geometry, standing on y = 0 and centred, so that each can be instanced on its own.
 async function loadPlant(name: string, resolution: string): Promise<Plant> {
   const [gltf, diffuse, normal] = await Promise.all([
-    new GLTFLoader().loadAsync(`${ROOT}/${name}/${name}.gltf`),
+    loadRetried(new GLTFLoader(), `${ROOT}/${name}/${name}.gltf`),
     loadTexture(`${ROOT}/${name}/textures/${name}_diff_${resolution}.jpg`, true),
     loadTexture(`${ROOT}/${name}/textures/${name}_nor_gl_${resolution}.jpg`, false)
   ]);
@@ -82,4 +82,4 @@ async function loadAll(tier: QualityTier): Promise<MossAssets> {
   return { cliffDiffuse, cliffNormal, cliffHeight, faceDiffuse, faceNormal, stoneDiffuse, mossDiffuse, mossHeight, fern, weed, sorrel, shrub, rocks };
 }
 
-export const useMossAssets = (tier: QualityTier) => suspend(() => loadAll(tier), ["codevember-moss", tier]);
+export const useMossAssets = (tier: QualityTier) => suspendRetried(() => loadAll(tier), ["codevember-moss", tier]);

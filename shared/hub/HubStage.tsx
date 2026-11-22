@@ -13,10 +13,14 @@ import { Post } from "@/shared/engine/Post";
 import { Extents } from "@/shared/engine/extents";
 import { Hover } from "@/shared/engine/hover";
 import { withRetries } from "@/shared/engine/retry";
+import { track } from "@/shared/engine/track";
+import { explain, lost, NO_3D, reportFailure, type Failure } from "@/shared/engine/failure";
 import { AdaptiveQuality, initialTier, topDpr, QualityProvider, scenePhase, type QualityChoice } from "@/shared/engine/quality";
 import { SettingsProvider, useCreateSettings } from "@/shared/engine/settings";
 // The days call the site Stage's useLook, so the hub has to provide that same context.
 import { LookContext } from "@/shared/engine/Stage";
+import { markLost, noteAdapter, scarce, startLow } from "./budget";
+import { HubFallback } from "./HubFallback";
 import { ReturnRig } from "./ReturnRig";
 import { loadSpace } from "./spaces/loaders";
 import { SpaceHud } from "./spaces/SpaceHud";
@@ -29,7 +33,7 @@ declare module "@react-three/fiber" {
 
 extend(THREE as never);
 
-class SceneBoundary extends Component<{ onError: (message: string) => void; children: ReactNode }, { failed: boolean }> {
+class SceneBoundary extends Component<{ onError: (failure: Failure) => void; children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
 
   static getDerivedStateFromError() {
@@ -38,7 +42,7 @@ class SceneBoundary extends Component<{ onError: (message: string) => void; chil
 
   componentDidCatch(error: Error) {
     console.error(error);
-    this.props.onError(error.message);
+    this.props.onError(explain(error));
   }
 
   render() {
@@ -225,9 +229,11 @@ function SceneWarmup({ phase, onCompiling, onReady, judge }: { phase: RefObject<
 // the hub included, so there is no new GPU device, canvas or page load between the calendar and a day.
 export default function HubStage({ day, onStep }: { day: CodevemberDay | null; onStep: (step: LoadStep) => void }) {
   const [loaded, setLoaded] = useState<LoadedDay | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Failure | null>(null);
+  const making = useRef<Promise<never> | null>(null);
   const [choice, setChoice] = useState<QualityChoice>("auto");
-  const [autoTier, setAutoTier] = useState<QualityTier>(initialTier);
+  // Short of memory (budget.ts), or back after the graphics device was lost in this tab: the lowest tier from the start.
+  const [autoTier, setAutoTier] = useState<QualityTier>(() => (startLow() ? "low" : initialTier()));
   const [isWebGPU, setIsWebGPU] = useState(true);
   // Held here, not set on the renderer, because the canvas puts its dpr prop back whenever this component renders.
   const [dpr, setDpr] = useState(topDpr);
@@ -277,9 +283,11 @@ export default function HubStage({ day, onStep }: { day: CodevemberDay | null; o
   useEffect(() => {
     let cancelled = false;
     if (loaded && day) advance("swap");
+    // A new day starts clean, unless the failure was the renderer's own, which a new day cannot mend.
+    setError((shown) => (shown && (shown.kind === "no-3d" || shown.kind === "memory") ? shown : null));
     const load = day ? dayLoaders[`${String(day.day).padStart(2, "0")}-${day.word.toLowerCase()}`] : loadSpace;
     if (!load) {
-      setError("This day has not been built yet.");
+      setError({ kind: "missing", message: "This day has not been built yet.", detail: "" });
       return;
     }
     // The hub covers its own way out by flying into the day's tile, so there is no fade to wait for after it.
@@ -293,8 +301,8 @@ export default function HubStage({ day, onStep }: { day: CodevemberDay | null; o
         setLoaded({ id: loadId.current, day, definition: module.default });
         advance("scene");
       })
-      .catch((failure: Error) => {
-        if (!cancelled) setError(failure.message);
+      .catch((failure: unknown) => {
+        if (!cancelled) setError(explain(failure));
       });
     return () => {
       cancelled = true;
@@ -302,9 +310,11 @@ export default function HubStage({ day, onStep }: { day: CodevemberDay | null; o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day]);
 
-  // An error message has to be readable, so it takes the loader down with it.
+  // An error message has to be readable, so it takes the loader down with it. And it is counted, by kind.
   useEffect(() => {
-    if (error) advance("done");
+    if (!error) return;
+    advance("done");
+    reportFailure(error);
   }, [error, advance]);
 
   // Full resolution again for a new day, or a tier chosen by hand. The hub itself, a page as much as a world, is drawn at the
@@ -320,7 +330,8 @@ export default function HubStage({ day, onStep }: { day: CodevemberDay | null; o
     window.addEventListener("resize", changed);
     return () => window.removeEventListener("resize", changed);
   }, []);
-  useEffect(() => setDpr(Math.min(hub ? Math.min(ratio, 2) : topDpr(), maxDpr ?? Infinity)), [choice, loaded?.id, maxDpr, hub, ratio]);
+  // Where memory is scarce (budget.ts), the hub too stops at 1.5: its full-screen passes then take half the memory.
+  useEffect(() => setDpr(Math.min(hub ? Math.min(ratio, scarce() ? 1.5 : 2) : topDpr(), maxDpr ?? Infinity)), [choice, loaded?.id, maxDpr, hub, ratio]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -338,22 +349,48 @@ export default function HubStage({ day, onStep }: { day: CodevemberDay | null; o
         dpr={dpr}
         // Well past any sky dome plus the furthest the camera can get from it, or zooming out cuts a black hole in the sky.
         camera={{ fov: 36, near: 0.05, far: 400 }}
-        gl={async (props) => {
-          let renderer = new THREE.WebGPURenderer({ ...(props as object), antialias: false, alpha: false });
-          try {
-            await renderer.init();
-          } catch (failure) {
-            // Phones can refuse WebGPU when short of memory. The WebGL backend often still gets through.
-            console.error(failure);
-            renderer = new THREE.WebGPURenderer({ ...(props as object), antialias: false, alpha: false, forceWebGL: true });
-            await renderer.init();
-          }
-          (renderer as unknown as { onDeviceLost: (info: { message: string }) => void }).onDeviceLost = (info) => {
-            setError(`The GPU connection was lost (${info.message}). Reload to continue.`);
-          };
-          setIsWebGPU((renderer.backend as unknown as { isWebGPUBackend?: boolean }).isWebGPUBackend === true);
-          return renderer as never;
-        }}
+        // One at a time: R3F asks again on every render until the renderer is ready, and each ask would start another GPU
+        // device on the same canvas (or, with none to be had, fail and re-render again, without end). Once one is made it
+        // asks no more, so the next ask, after a remount, makes a new one.
+        gl={(props) =>
+          (making.current ??= (async () => {
+            let renderer = new THREE.WebGPURenderer({ ...(props as object), antialias: false, alpha: false });
+            try {
+              await renderer.init();
+            } catch (failure) {
+              // Phones can refuse WebGPU when short of memory. The WebGL backend often still gets through.
+              console.error(failure);
+              track("webgpu-refused");
+              noteAdapter({ fellBack: true });
+              renderer = new THREE.WebGPURenderer({ ...(props as object), antialias: false, alpha: false, forceWebGL: true });
+              try {
+                await renderer.init();
+              } catch (again) {
+                // No WebGL 2 either: nothing can be drawn, so say so rather than leave a black page.
+                console.error(again);
+                setError((shown) => shown ?? { ...NO_3D, detail: explain(again).detail });
+                return new Promise<never>(() => {});
+              }
+            }
+            // A phone's adapter, by its limits, keeps the hub light (budget.ts). Asked before the posters load, which is after this.
+            const gpu = (navigator as unknown as { gpu?: { requestAdapter: () => Promise<{ limits: { maxTextureDimension2D: number } } | null> } }).gpu;
+            if (gpu && (renderer.backend as unknown as { isWebGPUBackend?: boolean }).isWebGPUBackend) {
+              const adapter = await gpu.requestAdapter().catch(() => null);
+              if (adapter) noteAdapter({ fellBack: false, maxTexture: adapter.limits.maxTextureDimension2D });
+            }
+            (renderer as unknown as { onDeviceLost: (info: { message: string }) => void }).onDeviceLost = (info) => {
+              // Remembered for this tab, so that the next load, a reload or a day opened from the plain page, starts light.
+              markLost();
+              setError(lost(info.message));
+            };
+            const webgpu = (renderer.backend as unknown as { isWebGPUBackend?: boolean }).isWebGPUBackend === true;
+            setIsWebGPU(webgpu);
+            // How many visits draw with WebGL instead, for the admin portal beside the failures.
+            if (!webgpu) track("renderer-webgl");
+            making.current = null;
+            return renderer as never;
+          })())
+        }
         onCreated={() => advance("scene")}
       >
         <QualityProvider value={{ tier, isWebGPU }}>
@@ -396,9 +433,16 @@ export default function HubStage({ day, onStep }: { day: CodevemberDay | null; o
         </QualityProvider>
       </Canvas>
 
-      {error ? (
+      {/* On the hub, a failure leaves the month as a plain page rather than an error screen. */}
+      {error && !day ? (
+        <HubFallback failure={error} />
+      ) : error ? (
         <div className="cv-error" role="alert">
-          <p>{error}</p>
+          <p>{error.message}</p>
+          {error.detail ? <p className="cv-error-detail">{error.detail}</p> : null}
+          <button type="button" className="cv-pill" onClick={() => window.location.reload()}>
+            Reload
+          </button>
           <a href={"/"}>All days</a>
         </div>
       ) : null}

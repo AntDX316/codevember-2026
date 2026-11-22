@@ -1,0 +1,7 @@
+head.glb, head-relief.jpg
+  "Infinite, 3D Head Scan" by Lee Perry-Smith (Infinite-Realities, www.ir-ltd.net), based on a work at
+  www.triplegangers.com. Licensed under Creative Commons Attribution 3.0 Unported
+  (https://creativecommons.org/licenses/by/3.0/). From the three.js examples (examples/models/gltf/LeePerrySmith/).
+  Changes: the hidden inner parts (mouth, eye sockets, the cap under the shoulders) removed from the mesh
+  (src/codevember/days/22-echo/dust/clean-head.py), and the displacement map
+  Infinite-Level_02_Disp_NoSmoothUV-4096.jpg scaled down to 1024 px. Sampled into points; never drawn as a mesh.

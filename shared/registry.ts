@@ -22,5 +22,6 @@ export const dayLoaders: Record<string, () => Promise<{ default: DayDefinition }
   "18-pendulum": () => import("../18-pendulum"),
   "19-erosion": () => import("../19-erosion"),
   "20-cocoon": () => import("../20-cocoon"),
-  "21-bolt": () => import("../21-bolt")
+  "21-bolt": () => import("../21-bolt"),
+  "22-echo": () => import("../22-echo")
 };

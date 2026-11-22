@@ -166,6 +166,17 @@ body {
   text-decoration: underline;
 }
 
+.cv-error-detail {
+  max-width: 34em;
+  font-size: 12px;
+  opacity: 0.5;
+  overflow-wrap: anywhere;
+}
+
+.cv-error .cv-pill {
+  justify-self: center;
+}
+
 /* ---- HUD ---- */
 
 .cv-hud {

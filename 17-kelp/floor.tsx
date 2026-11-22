@@ -1,13 +1,13 @@
 "use client";
 
 import { useMemo } from "react";
-import { suspend } from "suspend-react";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import { abs, attribute, cameraPosition, color, cos, float, max, mix, mx_noise_float, normalMap, normalize, positionGeometry, positionWorld, sin, smoothstep, sqrt, texture, transformNormalToView, uniform, uv, varying, vec2, vec3 } from "three/tsl";
 import * as THREE from "three/webgpu";
 import { useDispose } from "../shared/engine/dispose";
 import { lehmer } from "../shared/engine/random";
+import { fetchRetried, loadRetried, suspendRetried } from "../shared/engine/retry";
 import { floorAt, inClearing, type Plant } from "./kelp";
 import { underSea } from "./shade";
 import { SWELL, sea, swayAt } from "./water";
@@ -35,7 +35,7 @@ function merge(parts: THREE.BufferGeometry[]) {
 const ROOT = "/assets/17-kelp";
 
 async function loadTexture(url: string, colour: boolean) {
-  const tex = await new THREE.TextureLoader().loadAsync(url);
+  const tex = await loadRetried(new THREE.TextureLoader(), url);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.colorSpace = colour ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   tex.anisotropy = 16;
@@ -47,11 +47,11 @@ async function loadTexture(url: string, colour: boolean) {
 // where the normal map carries the detail the triangles no longer do.
 async function loadRock(name: string, size: string) {
   const [gltf, diffuse, normal, lods, lodIndex] = await Promise.all([
-    new GLTFLoader().loadAsync(`${ROOT}/${name}/${name}.gltf`),
+    loadRetried(new GLTFLoader(), `${ROOT}/${name}/${name}.gltf`),
     loadTexture(`${ROOT}/${name}/textures/${name}_diff_${size}.jpg`, true),
     loadTexture(`${ROOT}/${name}/textures/${name}_nor_gl_${size}.jpg`, false),
-    fetch(`${ROOT}/${name}/${name}_lod.json`).then((r) => r.json() as Promise<{ pieces: Record<string, { offset: number; count: number }> }>),
-    fetch(`${ROOT}/${name}/${name}_lod.bin`).then((r) => r.arrayBuffer())
+    fetchRetried(`${ROOT}/${name}/${name}_lod.json`).then((r) => r.json() as Promise<{ pieces: Record<string, { offset: number; count: number }> }>),
+    fetchRetried(`${ROOT}/${name}/${name}_lod.bin`).then((r) => r.arrayBuffer())
   ]);
   for (const t of [diffuse, normal]) t.flipY = false;
   const pieces: { geometry: THREE.BufferGeometry; light: THREE.BufferGeometry }[] = [];
@@ -98,7 +98,7 @@ async function loadFloor(fine: boolean) {
 }
 
 export type FloorAssets = Awaited<ReturnType<typeof loadFloor>>;
-export const useFloorAssets = (fine: boolean) => suspend(() => loadFloor(fine), ["kelp-floor", fine]);
+export const useFloorAssets = (fine: boolean) => suspendRetried(() => loadFloor(fine), ["kelp-floor", fine]);
 
 // Where the rocks lie: heaped in outcrops, one close by the start, and loose ones scattered between.
 export type Stone = { x: number; z: number; y: number; size: number; turn: number; kind: number };

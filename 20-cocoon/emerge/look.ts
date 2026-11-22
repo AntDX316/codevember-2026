@@ -81,7 +81,18 @@ const WORKER = `
 self.onmessage = async (e) => {
   const { id, url, top } = e.data;
   try {
-    const blob = await (await fetch(url)).blob();
+    // (Asked for again, after a pause, if the connection drops or the server stumbles.)
+    let blob = null;
+    for (let attempt = 1; !blob; attempt++) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(url + ": " + response.status);
+        blob = await response.blob();
+      } catch (failure) {
+        if (attempt >= 3) throw failure;
+        await new Promise((r) => setTimeout(r, 600 * attempt));
+      }
+    }
     const opts = { premultiplyAlpha: "none", colorSpaceConversion: "none" };
     // (Bitmaps live on the GPU, so resizing and cutting them competes with the frame being drawn: a breath between
     // each piece of that work keeps any one frame from carrying much of it.)
@@ -127,6 +138,14 @@ function decode(url: string) {
         waiting.get(e.data.id)?.(e.data);
         waiting.delete(e.data.id);
       };
+      // A worker that cannot run (a page policy refusing blob: workers, say) never answers, so everything waiting on it
+      // is told it failed, as a failed fetch would be, and the next ask starts a fresh one.
+      worker.onerror = () => {
+        for (const settle of waiting.values()) settle({ pieces: null, size: 0, mips: 0 });
+        waiting.clear();
+        worker?.terminate();
+        worker = null;
+      };
     }
     const id = ++asks;
     waiting.set(id, resolve);
@@ -138,7 +157,11 @@ function ask(column: number) {
   if (slot.asked || typeof createImageBitmap === "undefined" || typeof Worker === "undefined") return;
   slot.asked = true;
   void decode(new URL(`/assets/20-cocoon/wings-${WING_FILES[column]}.webp`, location.href).href).then((levels) => {
-    if (!levels.pieces) return;
+    // (Failed: asked for again the next time this species is wanted.)
+    if (!levels.pieces) {
+      if (!slot.levels) slot.asked = false;
+      return;
+    }
     if (slot.asked && !slot.levels) {
       slot.levels = levels.pieces;
       slot.size = levels.size;

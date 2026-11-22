@@ -9,6 +9,8 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { TextGeometry } from "three/addons/geometries/TextGeometry.js";
 import { FontLoader } from "three/addons/loaders/FontLoader.js";
 import { useDispose } from "@/shared/engine/dispose";
+import { lightHub } from "../budget";
+import { loadPosters, releasePosters } from "../hub/pictures";
 import { sound } from "@/shared/engine/sound";
 import type { DayDefinition } from "@/shared/engine/types";
 import TYPE from "./codevember-type.json";
@@ -87,7 +89,8 @@ async function loadFonts() {
   const style = getComputedStyle(document.documentElement);
   const display = style.getPropertyValue("--font-display").trim() || "Arial, sans-serif";
   const body = style.getPropertyValue("--font-body").trim() || "Arial, sans-serif";
-  await Promise.all([document.fonts.load(`800 100px ${display}`, "November 2026"), document.fonts.load(`500 20px ${body}`, "SUN MON")]);
+  // A font that will not load (blocked, or the connection dropped) is drawn in the fallback rather than ending the visit.
+  await Promise.all([document.fonts.load(`800 100px ${display}`, "November 2026"), document.fonts.load(`500 20px ${body}`, "SUN MON")]).catch(() => {});
   return { display, body };
 }
 type Fonts = Awaited<ReturnType<typeof loadFonts>>;
@@ -104,13 +107,42 @@ function canvasTexture(width: number, height: number, draw: (ctx: CanvasRenderin
   return map;
 }
 
+// Only how much ink there is at each point, the drawing's alpha, in one channel: a quarter of the memory of the full colour
+// picture (thirty tiles' words came to 79 MB on the GPU with their smaller copies), read the same. The canvas it was drawn
+// on is let go at once rather than kept beside the texture. Upside down from the canvas, as the GPU reads a picture.
+function inkTexture(width: number, height: number, draw: (ctx: CanvasRenderingContext2D) => void) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const ink = new Uint8Array(width * height);
+  if (ctx) {
+    draw(ctx);
+    const rgba = ctx.getImageData(0, 0, width, height).data;
+    for (let y = 0; y < height; y++) {
+      const from = y * width * 4;
+      const to = (height - 1 - y) * width;
+      for (let x = 0; x < width; x++) ink[to + x] = rgba[from + x * 4 + 3];
+    }
+  }
+  canvas.width = canvas.height = 0;
+  const map = new THREE.DataTexture(ink, width, height, THREE.RedFormat, THREE.UnsignedByteType);
+  map.minFilter = THREE.LinearMipmapLinearFilter;
+  map.magFilter = THREE.LinearFilter;
+  map.generateMipmaps = true;
+  map.anisotropy = 8;
+  map.needsUpdate = true;
+  return map;
+}
+
 // What is written on a tile, as ink on a clear ground: the date across the top band, and for a day still to come, its
-// numeral large in the middle, soft, as if seen through frosted glass.
+// numeral large in the middle, soft, as if seen through frosted glass. On a light hub (budget.ts) at 448 across rather than
+// 640: a tile on a phone's screen is a few dozen pixels across.
 function faceText(day: SpaceDay, fonts: Fonts) {
-  const W = 640;
+  const W = lightHub() ? 448 : 640;
   const H = Math.round((W * FACE.h) / FACE.w);
   const px = W / FACE.w;
-  return canvasTexture(W, H, (ctx) => {
+  return inkTexture(W, H, (ctx) => {
     const band = BAND * px;
     const inset = MARGIN * px * 1.2;
     ctx.fillStyle = "#fff";
@@ -136,7 +168,7 @@ function faceText(day: SpaceDay, fonts: Fonts) {
       ctx.letterSpacing = "0px";
       ctx.font = `800 ${Math.round(H * 0.42)}px ${fonts.display}`;
       ctx.shadowColor = "#fff";
-      ctx.shadowBlur = 40;
+      ctx.shadowBlur = (40 * W) / 640;
       ctx.globalAlpha = 0.55;
       ctx.fillText(String(day.number), W / 2, H * 0.6);
     }
@@ -248,8 +280,8 @@ function faceMaterial(day: SpaceDay, words: THREE.Texture, blank: THREE.Texture)
     // Coming up from a little below as they appear.
     const at = p.add(vec2(0, (u.reveal as any).oneMinus().mul(0.05))) as any;
     const showing = (u.reveal as any).clamp(0, 1) as any;
-    const ink = texture(words, at).a.mul(showing) as any;
-    const lip = texture(words, at.add(nudge)).a.sub(texture(words, at.sub(nudge)).a).mul(showing) as any;
+    const ink = texture(words, at).r.mul(showing) as any;
+    const lip = texture(words, at.add(nudge)).r.sub(texture(words, at.sub(nudge)).r).mul(showing) as any;
     const inkColour = open.greaterThan(0.5).select(color(INK), mix(color(INK), tint, 0.35)) as any;
     rgb = mix(rgb, inkColour, ink.mul(0.82)).add(lip.mul(0.12));
     // The sheen, a diagonal band of light run across once each time the tile is pointed at.
@@ -401,6 +433,9 @@ function Scene() {
   const days = useSpaceDays();
   const fonts = suspend(loadFonts, ["cv-space-calendar-fonts"]);
   const camera = useThree((state) => state.camera);
+  // Going into a day, the posters' GPU copies are let go (pictures.ts).
+  const posters = suspend(loadPosters, ["cv-hub-posters"]);
+  useEffect(() => () => releasePosters(posters), [posters]);
 
   const built = useMemo(() => {
     const group = new THREE.Group();

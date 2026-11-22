@@ -65,7 +65,8 @@ export async function loadFonts(): Promise<Fonts> {
   const style = getComputedStyle(document.documentElement);
   const display = style.getPropertyValue("--font-display").trim() || "Arial, sans-serif";
   const body = style.getPropertyValue("--font-body").trim() || "Arial, sans-serif";
-  await Promise.all([document.fonts.load(`800 100px ${display}`, "Codevember"), document.fonts.load(`400 13px ${body}`, "One word")]);
+  // A font that will not load (blocked, or the connection dropped) is drawn in the fallback rather than ending the visit.
+  await Promise.all([document.fonts.load(`800 100px ${display}`, "Codevember"), document.fonts.load(`400 13px ${body}`, "One word")]).catch(() => {});
   return { display, body };
 }
 

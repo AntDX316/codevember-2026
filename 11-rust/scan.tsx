@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import * as THREE from "three/webgpu";
 import { GaussianSplat } from "three/addons/objects/GaussianSplat.js";
 import { SPZLoader } from "three/addons/loaders/SPZLoader.js";
+import { loadRetried } from "../shared/engine/retry";
 
 // Where the subject stands in the scan, in the scan's own units: the foot of its axis, how far around it to keep, and
 // how far below and above. Scans come out upside down as often as not, so `flip` turns it the right way up.
@@ -65,7 +66,7 @@ export function Scan({ url, framing, core, onPress }: { url: string; framing: Fr
   useEffect(() => {
     let made: GaussianSplat | null = null;
     let live = true;
-    new SPZLoader().loadAsync(url).then((geometry) => {
+    loadRetried(new SPZLoader(), url).then((geometry) => {
       const kept = crop(geometry, framing);
       geometry.dispose();
       if (!live) return kept.dispose();
@@ -75,6 +76,9 @@ export function Scan({ url, framing, core, onPress }: { url: string; framing: Fr
       if (flip) made.rotation.x = Math.PI;
       made.position.set(-foot[0], flip ? foot[1] : -foot[1], flip ? foot[2] : -foot[2]).multiplyScalar(scale);
       setSplats(made);
+    }).catch((failure) => {
+      // Without its scan the scene still stands, only emptier, so this is not worth an error screen.
+      console.warn("Codevember Rust: a scan did not load.", url, failure);
     });
     return () => {
       live = false;
@@ -113,12 +117,15 @@ export function Backdrop({ url, place }: { url: string; place: Place }) {
   useEffect(() => {
     let made: GaussianSplat | null = null;
     let live = true;
-    new SPZLoader().loadAsync(url).then((geometry) => {
+    loadRetried(new SPZLoader(), url).then((geometry) => {
       if (!live) return geometry.dispose();
       made = new GaussianSplat(geometry);
       // The scan's camera looks down +z with y pointing down; turned over, it looks down -z with y up.
       made.rotation.x = Math.PI;
       setSplats(made);
+    }).catch((failure) => {
+      // Without its scan the scene still stands, only emptier, so this is not worth an error screen.
+      console.warn("Codevember Rust: a scan did not load.", url, failure);
     });
     return () => {
       live = false;

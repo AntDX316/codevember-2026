@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import * as THREE from "three/webgpu";
 import { attribute, output, vec4 } from "three/tsl";
 import { worldShifted } from "../shared/engine/extents";
+import { fetchRetried } from "../shared/engine/retry";
 import { sound } from "../shared/engine/sound";
 import type { QualityTier } from "../shared/engine/types";
 import { walking } from "../shared/engine/walk";
@@ -45,7 +46,7 @@ function blocked(i: number, j: number, di: number, dj: number) {
 // (cream fur, pink ears and nose, dark eyes) baked into the corners in place of a texture, 4 kB in all.
 const BUNNY = "/assets/13-labyrinth/bunny/bunny";
 async function loadBunny() {
-  const [info, data] = await Promise.all([fetch(`${BUNNY}.json`).then((r) => r.json() as Promise<{ vertices: number; indices: number }>), fetch(`${BUNNY}.bin`).then((r) => r.arrayBuffer())]);
+  const [info, data] = await Promise.all([fetchRetried(`${BUNNY}.json`).then((r) => r.json() as Promise<{ vertices: number; indices: number }>), fetchRetried(`${BUNNY}.bin`).then((r) => r.arrayBuffer())]);
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(data, 0, info.vertices * 3), 3));
   geometry.setAttribute("color", new THREE.BufferAttribute(new Uint8Array(data, info.vertices * 12, info.vertices * 4), 4, true));
@@ -63,7 +64,11 @@ export function Bunnies({ air, tier }: { air: Air; tier: QualityTier }) {
   const [shape, setShape] = useState<THREE.BufferGeometry | null>(null);
   useEffect(() => {
     let live = true;
-    loadBunny().then((g) => (live ? setShape(g) : g.dispose()));
+    // The maze is whole without its rabbits, so if they cannot be had it goes on without them.
+    loadBunny().then(
+      (g) => (live ? setShape(g) : g.dispose()),
+      (failure) => console.warn("Codevember Labyrinth: the rabbits did not load.", failure)
+    );
     return () => {
       live = false;
     };

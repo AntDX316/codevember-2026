@@ -492,3 +492,80 @@
 .cv-page-html-button.cv-hover .cv-page-html-arrow {
   transform: translateX(3px);
 }
+
+/* The hub as a plain page, when it cannot be drawn (HubFallback.tsx): over everything, the canvas and the page as HTML
+   included, and scrolling as a page does. */
+.cv-hub-fallback {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  overflow-y: auto;
+  padding: max(24px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom));
+  background: #08090c;
+  color: var(--cv-ink);
+}
+
+.cv-hub-fallback header {
+  max-width: 960px;
+  margin: 0 auto 24px;
+}
+
+.cv-hub-fallback h1 {
+  margin: 0 0 8px;
+  font-family: var(--font-display), Arial, sans-serif;
+  font-size: clamp(40px, 9vw, 72px);
+  line-height: 1;
+  color: var(--cv-ink);
+  opacity: 1;
+}
+
+.cv-hub-fallback p {
+  margin: 0 0 8px;
+  color: var(--cv-dim);
+}
+
+.cv-hub-fallback-note {
+  font-size: 13px;
+}
+
+.cv-hub-fallback-note .cv-pill {
+  margin-left: 6px;
+}
+
+.cv-hub-fallback ol {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0;
+  list-style: none;
+}
+
+.cv-hub-fallback a {
+  display: block;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--cv-glass);
+  color: inherit;
+  text-decoration: none;
+}
+
+.cv-hub-fallback img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+}
+
+.cv-hub-fallback span {
+  display: block;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+.cv-hub-fallback b {
+  margin-right: 4px;
+  color: var(--cv-accent);
+}

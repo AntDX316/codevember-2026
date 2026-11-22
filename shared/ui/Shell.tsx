@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { Component, useState, type ReactNode } from "react";
 import { dayFromPath, type CodevemberDay } from "../days";
+import { explain, reportFailure } from "../engine/failure";
 import { withRetries } from "../engine/retry";
 import { Loader, type LoadStep } from "./Loader";
 
@@ -35,10 +36,14 @@ export class CrashScreen extends Component<{ children: ReactNode }, { error: Err
 
   componentDidCatch(error: Error) {
     console.error(error);
-    if (isLoadFailure(error) && !sessionStorage.getItem(RELOADED)) {
-      sessionStorage.setItem(RELOADED, "1");
-      window.location.reload();
-    }
+    reportFailure(explain(error));
+    // Storage throws with cookies blocked, and is missing in some in-app browsers: then no reload, the screen as it is.
+    try {
+      if (isLoadFailure(error) && !sessionStorage.getItem(RELOADED)) {
+        sessionStorage.setItem(RELOADED, "1");
+        window.location.reload();
+      }
+    } catch {}
   }
 
   render() {
@@ -46,12 +51,12 @@ export class CrashScreen extends Component<{ children: ReactNode }, { error: Err
     if (!error) return this.props.children;
     return (
       <div className="cv-crash" role="alert">
-        <p>This one hit a snag.</p>
+        <p>{explain(error).message}</p>
         <button type="button" className="cv-pill" onClick={() => window.location.reload()}>
           Try again
         </button>
         <a href={"/"}>All days</a>
-        <small>{error.message}</small>
+        <small>{explain(error).detail}</small>
       </div>
     );
   }

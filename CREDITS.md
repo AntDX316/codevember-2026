@@ -162,3 +162,11 @@ The rooms round Bolt's plasma globe are HDRIs from [Poly Haven](https://polyhave
 | [Dresden Station (Night)](https://polyhaven.com/a/dresden_station_night) | Greg Zaal |
 
 IRL Hands runs Google's [MediaPipe Hand Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker) on the visitor's own device (Apache-2.0); its model and WebAssembly files are in `public/assets/21-bolt/mediapipe/`.
+
+## Echo
+
+Echo's graphics cards, memory sticks, bubble and hall of mirrors are all made in code. The Dust study (`?v=dust`) samples a head scan into points:
+
+| Asset | By | License |
+| --- | --- | --- |
+| "Infinite, 3D Head Scan" (`public/assets/22-echo/dust/head.glb`, `head-relief.jpg`), from the three.js examples; hidden inner parts removed and the displacement map scaled to 1024 px | Lee Perry-Smith, [Infinite-Realities](https://www.ir-ltd.net), based on a work at [triplegangers.com](https://www.triplegangers.com) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |

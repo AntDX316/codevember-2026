@@ -33,8 +33,10 @@ export function HubShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const onClick = (event: MouseEvent) => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const href = (event.target as Element | null)?.closest?.("a")?.getAttribute("href");
-      if (!href || !href.startsWith("/")) return;
+      const link = (event.target as Element | null)?.closest?.("a");
+      const href = link?.getAttribute("href");
+      // The plain page's links (HubFallback.tsx) load as new pages, with a fresh graphics device.
+      if (!href || !href.startsWith("/") || link?.hasAttribute("data-cv-full")) return;
       event.preventDefault();
       event.stopPropagation();
       // On the way back already: a second press, by mouse or by keyboard, is not a second trip.
