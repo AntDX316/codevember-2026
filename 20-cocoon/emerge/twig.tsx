@@ -186,7 +186,7 @@ if (typeof window !== "undefined") {
     relief.data = data;
     relief.size = size;
   };
-  image.src = "/codevember/tension/bark_brown_02_disp_1k.jpg";
+  image.src = "/assets/14-tension/bark_brown_02_disp_1k.jpg";
 }
 function heightAt(u: number, v: number) {
   const { data, size } = relief;
@@ -402,7 +402,7 @@ type Scans = { colour: THREE.Texture; normal: THREE.Texture; height: THREE.Textu
 function loadScans(fine: number): Scans {
   const size = fine < 0.75 ? "1k" : "2k";
   const load = (name: string, colour: boolean) => {
-    const t = new THREE.TextureLoader().load(`/codevember/tension/bark_brown_02_${name}.jpg`);
+    const t = new THREE.TextureLoader().load(`/assets/14-tension/bark_brown_02_${name}.jpg`);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.colorSpace = colour ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     t.anisotropy = 8;

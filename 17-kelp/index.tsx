@@ -5,14 +5,16 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three/webgpu";
 import { orbitControls, orbitPoint } from "../shared/engine/controls";
 import { focusBlur, focusDistance } from "../shared/engine/Post";
-import { useQuality } from "../shared/engine/quality";
-import { useSetting } from "../shared/engine/settings";
+import { narrowScreen, useQuality } from "../shared/engine/quality";
+import { useSetting, useSettingsStore } from "../shared/engine/settings";
 import { useMusic } from "../shared/engine/sound";
 import { useLook } from "../shared/engine/Stage";
 import type { DayDefinition } from "../shared/engine/types";
 import { followPrompt } from "../shared/ui/Follow";
 import { shareResult } from "../shared/ui/Share";
 import { ForestScene } from "./forest";
+import type { Head } from "./head";
+import { usePeer } from "./peer";
 import { Atmosphere } from "./atmosphere";
 import { Backdrop, Light, Snow } from "./sea";
 import { SunDial } from "./sundial";
@@ -54,7 +56,56 @@ function Scene() {
   const camera = useThree((state) => state.camera) as THREE.PerspectiveCamera;
   const dom = useThree((state) => state.gl.domElement) as HTMLCanvasElement;
   const scene = useThree((state) => state.scene);
-  if (process.env.NODE_ENV !== "production") Object.assign(globalThis, { __sea: sea, __kelpRoot: scene });
+  if (process.env.NODE_ENV !== "production") Object.assign(globalThis, { __sea: sea, __kelpRoot: scene, __kelpHead: () => head.current, __camera: camera });
+
+  // Head Tracking: the camera finds the viewer's face and the screen becomes a window into the water. The camera and the
+  // tracker are loaded only when it is turned on and released when it is turned off; refused or missing, it turns itself
+  // back off and says why. Desktop only, as Bolt's IRL Hands: the toggle is never shown on a phone or touch screen.
+  const store = useSettingsStore();
+  const desk = useSetting<boolean>("desk");
+  useEffect(() => {
+    const publish = () => store.set("desk", !window.matchMedia("(pointer: coarse)").matches && !narrowScreen());
+    publish();
+    return store.onAction("reset", publish);
+  }, [store]);
+  const headOn = useSetting<boolean>("head");
+  // Turning it on closes the controls panel, so the view is clear.
+  const headWas = useRef(headOn);
+  useEffect(() => {
+    if (headOn && !headWas.current && desk) {
+      const button = document.querySelector<HTMLButtonElement>(".cv-panel-head");
+      if (button?.getAttribute("aria-expanded") === "true") button.click();
+    }
+    headWas.current = headOn;
+  }, [headOn, desk]);
+  const head = useRef<Head | null>(null);
+  useEffect(() => {
+    if (!headOn || !desk) return;
+    let live = true;
+    let made: Head | null = null;
+    const abort = new AbortController();
+    const off = () => live && store.set("head", false);
+    import("./head").then(
+      (m) =>
+        m.startHead({ signal: abort.signal, onFail: off }).then(
+          (h) => {
+            if (!live) return h.stop();
+            made = h;
+            head.current = h;
+          },
+          // The setup card has already said why.
+          off
+        ),
+      off
+    );
+    return () => {
+      live = false;
+      abort.abort();
+      made?.stop();
+      head.current = null;
+    };
+  }, [headOn, desk, store]);
+  usePeer(head);
 
   useLook(useMemo(() => ({ ...LOOK, exposure: look.exposure, bloom: look.bloom }), [look]));
   const first = useRef(true);
@@ -221,7 +272,9 @@ const kelp: DayDefinition = {
   look: { ...LOOK, exposure: 1.05, bloom: 0.35 },
   passes: { haze: false, bounce: false, overlay: true, depthOfField: { range: 5 } },
   settings: {
-    current: { type: "range", label: "Current", min: 0, max: 2.5, step: 0.01, value: 0.3 }
+    current: { type: "range", label: "Current", min: 0, max: 2.5, step: 0.01, value: 0.3 },
+    desk: { type: "toggle", label: "Desktop", value: false, hidden: true },
+    head: { type: "toggle", label: "Head Tracking", value: false, when: { setting: "desk", is: true } }
   },
   overview: [
     {

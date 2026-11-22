@@ -177,12 +177,12 @@ function leafGeometry() {
   return geometry;
 }
 
-// The bark scan (CC0, Poly Haven: bark_brown_02; see public/codevember/tension/CREDITS.txt), finer on bigger screens.
+// The bark scan (CC0, Poly Haven: bark_brown_02; see public/assets/14-tension/CREDITS.txt), finer on bigger screens.
 type Scans = { colour: THREE.Texture; normal: THREE.Texture; height: THREE.Texture; rough: THREE.Texture };
 function loadScans(fine: number): Scans {
   const size = fine < 0.75 ? "1k" : "2k";
   const load = (name: string, colour: boolean) => {
-    const t = new THREE.TextureLoader().load(`/codevember/tension/bark_brown_02_${name}.jpg`);
+    const t = new THREE.TextureLoader().load(`/assets/14-tension/bark_brown_02_${name}.jpg`);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.colorSpace = colour ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     t.anisotropy = 8;
