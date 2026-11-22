@@ -234,6 +234,13 @@ export default function HubStage({ day, onStep }: { day: CodevemberDay | null; o
   const [choice, setChoice] = useState<QualityChoice>("auto");
   // Short of memory (budget.ts), or back after the graphics device was lost in this tab: the lowest tier from the start.
   const [autoTier, setAutoTier] = useState<QualityTier>(() => (startLow() ? "low" : initialTier()));
+  useEffect(() => {
+    if (day?.day === 22 && !startLow() && window.matchMedia("(pointer: coarse)").matches) {
+      setAutoTier("medium");
+    } else {
+      setAutoTier(startLow() ? "low" : initialTier());
+    }
+  }, [day?.day]);
   const [isWebGPU, setIsWebGPU] = useState(true);
   // Held here, not set on the renderer, because the canvas puts its dpr prop back whenever this component renders.
   const [dpr, setDpr] = useState(topDpr);
@@ -331,7 +338,20 @@ export default function HubStage({ day, onStep }: { day: CodevemberDay | null; o
     return () => window.removeEventListener("resize", changed);
   }, []);
   // Where memory is scarce (budget.ts), the hub too stops at 1.5: its full-screen passes then take half the memory.
-  useEffect(() => setDpr(Math.min(hub ? Math.min(ratio, scarce() ? 1.5 : 2) : topDpr(), maxDpr ?? Infinity)), [choice, loaded?.id, maxDpr, hub, ratio]);
+  useEffect(() => {
+    const resize = () => {
+      let limit = hub ? Math.min(ratio, scarce() ? 1.5 : 2) : topDpr();
+      if (loaded?.day?.day === 22 && window.matchMedia("(pointer: coarse)").matches) {
+        const pixels = { low: 1200000, medium: 2400000, high: 4000000 }[tier];
+        limit = Math.min(ratio, 3, Math.max(1, Math.sqrt(pixels / (window.innerWidth * window.innerHeight))));
+      }
+      setDpr(Math.min(limit, maxDpr ?? Infinity));
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, [loaded, maxDpr, hub, ratio, tier]);
+
 
   useEffect(() => {
     if (!loaded) return;

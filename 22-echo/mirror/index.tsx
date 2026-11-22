@@ -390,11 +390,11 @@ const day: DayDefinition = {
     position: [0.8, -0.05, 3.6],
     target: [0, CENTRE_Y, 0],
     fov: 52,
-    phone: { position: [0.6, AIM_Y + 0.25, 4.3], target: [0, AIM_Y, 0], fov: 86 }
+    phone: { position: [0.6, AIM_Y + 0.25, 4.3], target: [0, AIM_Y, 0], fov: 76 }
   },
   hover: true,
-  maxDpr: 1,
-  look: { background: "#020203", exposure: 1, bloom: 0.42, bloomThreshold: 0.8, gi: 0, ao: 0, vignette: 0.55, grain: 0.02, haze: 0 },
+  maxDpr: typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches ? 3 : 1,
+  look: { background: "#020203", exposure: 1, bloom: 0.42, bloomThreshold: 0.8, gi: 0, ao: 0, vignette: 0.55, grain: PHONE ? 0.007 : 0.02, haze: 0 },
   passes: { bounce: false, haze: false, overlay: true, occlusion: false, temporal: false },
   settings: {
     confetti: { type: "range", label: "Confetti", min: 0, max: 3, step: 0.1, value: PHONE ? 1.3 : 2 },
