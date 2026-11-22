@@ -557,8 +557,8 @@ export function Hud({ day, hint, prompt, notes, overview, Overlay, settings, pho
     <TextMotion>
     <div className={`cv-hud ${hidden ? "cv-hud-hidden" : ""}`}>
       <header className="cv-bar">
-        <Link className="cv-pill cv-calendar-pill" href="/" prefetch={false}>
-          Codevember Calendar
+        <Link className="cv-pill cv-calendar-pill" aria-label="Back to calendar" href="/" prefetch={false}>
+          ← Back to calendar
         </Link>
         {notes || overview ? (
           <div className="cv-about" key={`about-${day.day}`}>
