@@ -18,6 +18,7 @@ import { FLOOR, Pendulum, PIVOT, VESSELS, type VesselName } from "./pendulum";
 import { Rig } from "./rig";
 import { prepareSave, savePainting } from "./save";
 import { CAN_SPOTS, Cans, PAINTS } from "./studio";
+import { useHeadTracking } from "../17-kelp/peer";
 import { Gallery } from "./studios";
 import { WindowLight } from "./windowLight";
 
@@ -66,6 +67,9 @@ function Scene() {
   const scene = useThree((state) => state.scene);
   const rig = useRef<THREE.Group>(null);
   if (process.env.NODE_ENV !== "production") Object.assign(globalThis, { __pendulum: pendulum, __paint: paint, __camera: camera, __store: store, __scene: scene });
+  // Head Tracking (desktop only): the screen as a window into the studio, Kelp's. The glass sits at the canvas, about two
+  // metres off; the eye stays above the canvas's edge and under the rope's pivot.
+  useHeadTracking({ near: 1, far: 4, floor: 0.5, ceiling: 2.6 });
 
   // For testing in development: put the eye somewhere from the console.
   useEffect(() => {
@@ -456,6 +460,8 @@ const pendulum: DayDefinition = {
     paused: { type: "toggle", label: "Pause paint", value: false, icon: "pause", showWhile: "pouring" },
     // Whether paint is running from the vessel now, for the phone's pause button to follow.
     pouring: { type: "toggle", label: "Pouring", value: false, hidden: true },
+    desk: { type: "toggle", label: "Desktop", value: false, hidden: true },
+    head: { type: "toggle", label: "Head Tracking", value: false, when: { setting: "desk", is: true } },
     fresh: { type: "action", label: "New canvas" },
     save: { type: "action", label: "Save painting" }
   },

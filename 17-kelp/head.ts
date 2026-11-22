@@ -1,9 +1,9 @@
-// Head Tracking: the camera finds your face, and the screen becomes a window into the water: move your head and the
+// Head Tracking: the camera finds your face, and the screen becomes a window into the scene (Kelp, Pendulum): move your head and the
 // view shifts as it would through glass. Loaded only when the setting is turned on; the camera is asked for then and
 // released when it is turned off. The detector runs in a worker on this device, about 30 times a second, and only the
 // latest answer is read by the render loop, so it never waits on it. Nothing is uploaded. Built on Bolt's IRL Hands.
 
-// The live camera with the face's box and eyes, bottom right, above the sun dial. A plain <video> mirrored by CSS with a
+// The live camera with the face's box and eyes, bottom right (above Kelp's sun dial). A plain <video> mirrored by CSS with a
 // small canvas over it, redrawn only when a new answer arrives. Set false to hide it.
 export const SHOW_DEBUG = true;
 
@@ -177,7 +177,7 @@ function setupCard() {
       if (gone) return;
       bar.style.transform = "scaleX(1)";
       spinner.remove();
-      label.textContent = "Ready: move your head to look into the water";
+      label.textContent = "Ready: move your head to look around";
       remove(900);
     },
     fail(text: string) {
@@ -198,7 +198,7 @@ const mb = (bytes: number) => (bytes / 1048576).toFixed(1);
 // Starts the camera and the tracker, showing how far along it is. Resolves once the camera is on (the tracker may still
 // be starting). Rejects with a plain message if the camera is refused or missing; a tracker that fails later calls
 // onFail. Aborting cleans up whatever has been started.
-export async function startHead({ signal, onFail }: { signal: AbortSignal; onFail: (message: string) => void }): Promise<Head> {
+export async function startHead({ signal, onFail, above }: { signal: AbortSignal; onFail: (message: string) => void; above?: string }): Promise<Head> {
   const card = setupCard();
   // Fetching and starting the tracker begins at once, alongside the camera permission.
   const t = tracker();
@@ -314,13 +314,13 @@ export async function startHead({ signal, onFail }: { signal: AbortSignal; onFai
     panel.append(video, canvas, label);
     root().appendChild(panel);
   }
-  // 300 px wide where there is room, smaller in a narrow window, and stood just above the sun dial. Again on resize.
+  // 300 px wide where there is room, smaller in a narrow window, and stood just above `above` if the day names one. Again on resize.
   let panelWidth = 300;
   const place = () => {
     if (!panel) return;
     panelWidth = Math.round(Math.max(150, Math.min(300, window.innerWidth * 0.25)));
     panel.style.width = `${panelWidth}px`;
-    const dial = document.querySelector(".cv-kelp-sun")?.getBoundingClientRect();
+    const dial = above ? document.querySelector(above)?.getBoundingClientRect() : undefined;
     panel.style.bottom = dial && dial.height > 0 ? `${Math.round(window.innerHeight - dial.top + 12)}px` : "96px";
     fresh = true;
   };

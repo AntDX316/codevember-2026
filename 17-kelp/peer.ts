@@ -1,23 +1,33 @@
-// The screen as a window into the water, for Head Tracking. The eye is moved with the viewer's head, and the view is
-// sheared (an off-axis frustum) so a pane of glass at the orbit point stays fixed on screen: what lies nearer swings
-// against the head, what lies beyond slides with it, as through a real window. Moving in widens the view.
+// The screen as a window into the scene, for Head Tracking (Kelp, Pendulum). The eye is moved with the viewer's head,
+// and the view is sheared (an off-axis frustum) so a pane of glass at the orbit point stays fixed on screen: what lies
+// nearer swings against the head, what lies beyond slides with it, as through a real window. Moving in widens the view.
 //
-// Applied just before the frame is drawn and taken off just after, so the orbit, the hover and the day's own frame loop
-// never see it, and nothing else is changed. The shear is added after three works out the projection (and after the
-// temporal filter's jitter), by wrapping this camera's updateProjectionMatrix while Kelp is mounted.
+// Put on after every system has placed the eye for the frame, and taken off first thing in the next, before any of
+// them runs: so the orbit, the hover and the day's own frame loop never see it, while a press between frames (grabbing
+// Pendulum's can) is cast through the view as drawn. The shear is added after three works out the projection (and
+// after the temporal filter's jitter), by wrapping this camera's updateProjectionMatrix while the day is mounted.
 
 import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, type RefObject } from "react";
+import { useEffect, useMemo, useRef, type RefObject } from "react";
 import * as THREE from "three/webgpu";
 import { orbitPoint } from "../shared/engine/controls";
+import { narrowScreen } from "../shared/engine/quality";
+import { useSetting, useSettingsStore } from "../shared/engine/settings";
 import type { Head } from "./head";
-import { SURFACE } from "./water";
 
-// The glass is at the orbit point, at least this near and at most this far.
-const NEAR_PANE = 2;
-const FAR_PANE = 8;
+export type PeerOptions = {
+  // The glass is at the orbit point, at least this near and at most this far.
+  near: number;
+  far: number;
+  // The eye is never moved below or above these heights.
+  floor: number;
+  ceiling: number;
+  // The camera preview stands above this element, if it is on the page.
+  above?: string;
+};
+
 // How far the eye may move from where it was, as a share of the distance to the glass: across, and in or out (less, so
-// leaning in never carries the eye into the kelp).
+// leaning in never carries the eye into the scene).
 const REACH = 0.4;
 const REACH_IN = 0.2;
 // Leaning in or out moves the eye at this share of the geometry's own, past a small still zone (metres of head travel):
@@ -40,7 +50,58 @@ function glide(at: { x: number; v: number }, target: number, time: number, dt: n
   at.x = target + (change + pull) * decay;
 }
 
-export function usePeer(head: RefObject<Head | null>) {
+// The whole of Head Tracking for a day: its "head" toggle (shown on desktop only, through a hidden "desk" setting the
+// day declares beside it), the camera and tracker loaded only while it is on, and the window view.
+export function useHeadTracking(options: PeerOptions) {
+  // Desktop only, as Bolt's IRL Hands: never offered on a phone or touch screen. Published again after a Reset.
+  const store = useSettingsStore();
+  const desk = useSetting<boolean>("desk");
+  useEffect(() => {
+    const publish = () => store.set("desk", !window.matchMedia("(pointer: coarse)").matches && !narrowScreen());
+    publish();
+    return store.onAction("reset", publish);
+  }, [store]);
+  const on = useSetting<boolean>("head");
+  // Turning it on closes the controls panel, so the view is clear.
+  const was = useRef(on);
+  useEffect(() => {
+    if (on && !was.current && desk) {
+      const button = document.querySelector<HTMLButtonElement>(".cv-panel-head");
+      if (button?.getAttribute("aria-expanded") === "true") button.click();
+    }
+    was.current = on;
+  }, [on, desk]);
+  // The camera and the tracker: loaded when turned on, released when turned off. Refused or missing, it turns itself
+  // back off, and the setup card says why.
+  const head = useRef<Head | null>(null);
+  const above = options.above;
+  useEffect(() => {
+    if (!on || !desk) return;
+    let live = true;
+    let made: Head | null = null;
+    const abort = new AbortController();
+    const off = () => live && store.set("head", false);
+    import("./head").then(
+      (m) =>
+        m.startHead({ signal: abort.signal, onFail: off, above }).then((h) => {
+          if (!live) return h.stop();
+          made = h;
+          head.current = h;
+        }, off),
+      off
+    );
+    return () => {
+      live = false;
+      abort.abort();
+      made?.stop();
+      head.current = null;
+    };
+  }, [on, desk, store, above]);
+  if (process.env.NODE_ENV !== "production") Object.assign(globalThis, { __head: () => head.current });
+  usePeer(head, options);
+}
+
+function usePeer(head: RefObject<Head | null>, { near, far, floor, ceiling }: PeerOptions) {
   const camera = useThree((state) => state.camera) as THREE.PerspectiveCamera;
   const s = useMemo(
     () => ({
@@ -58,7 +119,7 @@ export function usePeer(head: RefObject<Head | null>) {
     }),
     []
   );
-  if (process.env.NODE_ENV !== "production") Object.assign(globalThis, { __kelpPeer: s });
+  if (process.env.NODE_ENV !== "production") Object.assign(globalThis, { __peer: s });
 
   useEffect(() => {
     const cam = camera as THREE.PerspectiveCamera & { updateProjectionMatrix: () => void };
@@ -77,18 +138,33 @@ export function usePeer(head: RefObject<Head | null>) {
       this.projectionMatrixInverse.copy(this.projectionMatrix).invert();
     };
     return () => {
+      // Off the eye before it goes, so nothing is left moved.
+      if (shear.on) {
+        shear.on = false;
+        camera.position.sub(s.moved);
+        camera.updateMatrixWorld();
+      }
       if (own) cam.updateProjectionMatrix = base;
       else delete (cam as { updateProjectionMatrix?: unknown }).updateProjectionMatrix;
       cam.updateProjectionMatrix();
     };
   }, [camera, s]);
 
+  // Off: first thing in the frame, before anything else moves the eye.
+  useFrame(() => {
+    if (!s.shear.on) return;
+    s.shear.on = false;
+    camera.position.sub(s.moved);
+    camera.updateMatrixWorld();
+    camera.updateProjectionMatrix();
+  }, -1000);
+
   // On: after every system has placed the eye (the orbit, the hover, the day), before the frame is drawn (priority 1).
   useFrame((_, raw) => {
     const dt = Math.min(raw, 0.1);
     const h = head.current;
     const seen = !!h?.seen;
-    const pane = THREE.MathUtils.clamp(camera.position.distanceTo(orbitPoint.current ?? s.axis.set(0, 0, 0)), NEAR_PANE, FAR_PANE);
+    const pane = THREE.MathUtils.clamp(camera.position.distanceTo(orbitPoint.current ?? s.axis.set(0, 0, 0)), near, far);
     // A head's metres to the scene's: the viewer's own distance from the screen maps to the glass's from the eye.
     const metres = seen && h ? pane / Math.max(0.25, h.stats.distance - h.offset.z) : 0;
     const limit = pane * REACH;
@@ -111,9 +187,9 @@ export function usePeer(head: RefObject<Head | null>) {
     s.moved.add(s.axis.set(1, 0, 0).applyQuaternion(camera.quaternion).multiplyScalar(s.x));
     s.moved.add(s.axis.set(0, 1, 0).applyQuaternion(camera.quaternion).multiplyScalar(s.y));
     s.moved.add(s.axis.set(0, 0, 1).applyQuaternion(camera.quaternion).multiplyScalar(s.z));
-    // Never out of the water or into the floor.
+    // Never below the floor or above the ceiling.
     const y = camera.position.y + s.moved.y;
-    s.moved.y = THREE.MathUtils.clamp(y, 0.35, SURFACE - 0.4) - camera.position.y;
+    s.moved.y = THREE.MathUtils.clamp(y, floor, ceiling) - camera.position.y;
     camera.position.add(s.moved);
     camera.updateMatrixWorld();
     s.shear.on = true;
@@ -124,13 +200,4 @@ export function usePeer(head: RefObject<Head | null>) {
     // Dev only: where the orbit point lands on screen as drawn, which the shear should hold still.
     if (process.env.NODE_ENV !== "production" && orbitPoint.current) Object.assign(s, { pinned: orbitPoint.current.clone().project(camera).toArray() });
   }, 0.9);
-
-  // Off: once the frame is drawn.
-  useFrame(() => {
-    if (!s.shear.on) return;
-    s.shear.on = false;
-    camera.position.sub(s.moved);
-    camera.updateMatrixWorld();
-    camera.updateProjectionMatrix();
-  }, 1.5);
 }
