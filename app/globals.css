@@ -1967,3 +1967,28 @@ a.cv-step:hover {
   font: 12px/1.3 system-ui, sans-serif;
   white-space: nowrap;
 }
+
+/* Mobile gestures on controls and interactive surfaces. */
+:where(html, body, dialog, button, summary, select, input, [role="button"], [role="tab"]) {
+  touch-action: manipulation;
+}
+@media (any-pointer: coarse) {
+  :is(button,
+      summary,
+      select,
+      input:is([type="button"], [type="submit"], [type="reset"], [type="range"], [type="checkbox"], [type="radio"]),
+      [role="button"],
+      [role="tab"],
+      [role="switch"],
+      [role="slider"],
+      a.cv-pill,
+      a[data-cv-full],
+      canvas,
+      .cv-colour-pad,
+      .cv-canvas) {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
